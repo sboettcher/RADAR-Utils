@@ -16,4 +16,8 @@ pip3 install numpy certifi pyqt5 pyqtgraph
 - Unzip the generated folder into this directory
 - (optional) in `python-client/swagger_client/configuration.py` change `self.verify_ssl` to `False`
 - copy `cp -r python-client/swagger_client .`
-- `./radar_api_monitor.py`
+
+As far as I can tell there is currently an issue in the swagger generation, to fix it run exactly:
+```
+sed -ie "/return_data\ =\ None/s/None/self.deserialize\(response_data,\"object\"\)/" swagger_client/api_client.py
+```
