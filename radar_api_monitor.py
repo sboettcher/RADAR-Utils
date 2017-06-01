@@ -34,7 +34,8 @@ intervals = ["TEN_SECOND", "THIRTY_SECOND", "ONE_MIN", "TEN_MIN", "ONE_HOUR", "O
 
 methods = {
             "all_sources": "get_all_sources_json",
-            "last_computed_source_status": "get_last_computed_source_status_json"
+            "last_computed_source_status": "get_last_computed_source_status_json",
+            "last_received_sample": "get_last_received_sample_json"
           }
 
 
@@ -52,10 +53,17 @@ def api_thread(api_instance):
 
   while(running):
     try:
-      if req_conf["subjectId"] and req_conf["sourceId"]:
-        thread = api_instance.get_last_computed_source_status_json(req_conf["subjectId"], req_conf["sourceId"], callback=api_callback)
+      if req_conf["method"] == "get_all_sources_json":
+        if req_conf["subjectId"]:
+          thread = api_instance.get_all_sources_json(req_conf["subjectId"], callback=api_callback)
+      elif req_conf["method"] == "get_last_computed_source_status_json":
+        if req_conf["subjectId"] and req_conf["sourceId"]:
+          thread = api_instance.get_last_computed_source_status_json(req_conf["subjectId"], req_conf["sourceId"], callback=api_callback)
+      elif req_conf["method"] == "get_last_received_sample_json":
+        if req_conf["subjectId"] and req_conf["sourceId"] and req_conf["sensor"] and req_conf["stat"] and req_conf["interval"]:
+          thread = api_instance.get_last_received_sample_json(req_conf["sensor"], req_conf["stat"], req_conf["interval"], req_conf["subjectId"], req_conf["sourceId"], callback=api_callback)
     except ApiException as e:
-      print("Exception when calling DefaultApi->get_last_computed_source_status_json: %s\n" % e)
+      print("Exception when calling DefaultApi->get_[]: %s\n" % e)
 
     time.sleep(args.api_refresh/1000.)
 
@@ -78,8 +86,8 @@ def update_gui():
     except ApiException as e:
       print("Exception when calling DefaultApi->get_all_sources_json: %s\n" % e)
     if sources_tmp: subject_sources = [ sid for sid in sources_tmp["sources"] if sid["type"] == "EMPATICA" ]
-    sources_select.clear()
-    sources_select.addItems([s["id"] for s in subject_sources])
+    source_select.clear()
+    source_select.addItems([s["id"] for s in subject_sources])
     if len(subject_sources) == 0: id_text.setStyleSheet("background-color: rgb(255, 0, 0);")
     else: id_text.setStyleSheet("background-color: rgb(255, 255, 255);")
 
@@ -90,8 +98,29 @@ def update_gui():
     sort_tree_item(data_tree.topLevelItem(i))
 
   # update config
+  req_conf["method"] = method_select.value()
   req_conf["subjectId"] = id_text.text()
-  req_conf["sourceId"] = sources_select.value()
+  req_conf["sourceId"] = source_select.value()
+  req_conf["sensor"] = sensor_select.value()
+  req_conf["stat"] = stat_select.value()
+  req_conf["interval"] = interval_select.value()
+
+  # disable widgets according to method
+  if req_conf["method"] == "get_all_sources_json":
+    source_select.setEnabled(False)
+    sensor_select.setEnabled(False)
+    stat_select.setEnabled(False)
+    interval_select.setEnabled(False)
+  elif req_conf["method"] == "get_last_computed_source_status_json":
+    source_select.setEnabled(True)
+    sensor_select.setEnabled(False)
+    stat_select.setEnabled(False)
+    interval_select.setEnabled(False)
+  elif req_conf["method"] == "get_last_received_sample_json":
+    source_select.setEnabled(True)
+    sensor_select.setEnabled(True)
+    stat_select.setEnabled(True)
+    interval_select.setEnabled(True)
 
 
 
@@ -109,10 +138,16 @@ if __name__=="__main__":
   cmdline.add_argument('-ic', '--invert-fbg-colors', help="invert fore/background colors\n", action="store_true")
   cmdline.add_argument('-c', '--pen-color', metavar='COLOR', type=str, default="r", help="plot line pen color\n", choices=['b', 'g', 'r', 'c', 'm', 'y', 'k', 'w'])
 
-  cmdline.add_argument('-u', '--userid', type=str, default="UKLFR", help="\n")
-  cmdline.add_argument('-s', '--sourceid', type=str, help="\n")
   cmdline.add_argument('-ra', '--api-refresh', type=float, default=1000., help="api refresh rate (ms)\n")
   cmdline.add_argument('-rg', '--gui-refresh', type=float, default=500., help="gui refresh rate (ms)\n")
+
+  cmdline.add_argument('-u', '--userid', type=str, default="UKLFR", help="start with this userId selected\n")
+  cmdline.add_argument('-s', '--sourceid', type=str, help="start with this sourceId selected\n")
+  cmdline.add_argument('--sensor', type=str, help="start with this sensor selected\n", choices=sensors)
+  cmdline.add_argument('--stat', type=str, help="start with this stat selected\n", choices=stats)
+  cmdline.add_argument('--interval', type=str, help="start with this interval selected\n", choices=intervals)
+  cmdline.add_argument('-m', '--method', type=str, default="all_sources", help="start with this method selected\n", choices=methods.keys())
+
 
   #cmdline.add_argument('--num-samples', '-n', type=int, default=0,     help="plot the last n samples, 0 keeps all\n")
   #cmdline.add_argument('--frame-rate',  '-f', type=float, default=60., help="limit the frame-rate, 0 is unlimited\n")
@@ -164,25 +199,55 @@ if __name__=="__main__":
   layout.addWidget(id_text,0,1)
 
   # add source selection field
-  sources_select = pg.ComboBox()
-  sources_select.addItems([s["id"] for s in subject_sources])
-  if args.sourceid and sources_select.findText(args.sourceid) > -1: sources_select.setValue(args.sourceid)
+  source_select = pg.ComboBox()
+  source_select.addItems([s["id"] for s in subject_sources])
+  if args.sourceid and source_select.findText(args.sourceid) > -1: source_select.setValue(args.sourceid)
+  source_select.setEnabled(False)
   layout.addWidget(QtGui.QLabel("Device ID"),1,0)
-  layout.addWidget(sources_select,1,1)
+  layout.addWidget(source_select,1,1)
+
+  # add sensor selection field
+  sensor_select = pg.ComboBox()
+  sensor_select.addItems(sensors)
+  if args.sensor: sensor_select.setValue(args.sensor)
+  sensor_select.setEnabled(False)
+  layout.addWidget(QtGui.QLabel("Sensor"),2,0)
+  layout.addWidget(sensor_select,2,1)
+
+  # add stat selection field
+  stat_select = pg.ComboBox()
+  stat_select.addItems(stats)
+  if args.stat: stat_select.setValue(args.stat)
+  stat_select.setEnabled(False)
+  layout.addWidget(QtGui.QLabel("Stat"),3,0)
+  layout.addWidget(stat_select,3,1)
+
+  # add interval selection field
+  interval_select = pg.ComboBox()
+  interval_select.addItems(intervals)
+  if args.interval: interval_select.setValue(args.interval)
+  interval_select.setEnabled(False)
+  layout.addWidget(QtGui.QLabel("Interval"),4,0)
+  layout.addWidget(interval_select,4,1)
 
   # add method selection field
   method_select = pg.ComboBox()
   method_select.addItems(methods)
-  layout.addWidget(QtGui.QLabel("Method"),2,0)
-  layout.addWidget(method_select,2,1)
+  if args.method: method_select.setValue(methods[args.method])
+  layout.addWidget(QtGui.QLabel("Method"),5,0)
+  layout.addWidget(method_select,5,1)
 
   # add data tree for response vis
   data_tree = pg.DataTreeWidget()
-  layout.addWidget(data_tree,3,0,1,2)
+  layout.addWidget(data_tree,6,0,1,2)
 
   # set api request parameters
+  req_conf["method"] = method_select.value()
   req_conf["subjectId"] = id_text.text()
-  req_conf["sourceId"] = sources_select.value()
+  req_conf["sourceId"] = source_select.value()
+  req_conf["sensor"] = sensor_select.value()
+  req_conf["stat"] = stat_select.value()
+  req_conf["interval"] = interval_select.value()
 
   # connect update and start timer
   timer = QtCore.QTimer()
