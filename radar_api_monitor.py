@@ -194,13 +194,29 @@ if __name__=="__main__":
   tab_widget = QtGui.QTabWidget()
   win.setCentralWidget(tab_widget)
 
+  # create raw api tab
   raw_api_widget = QtGui.QWidget()
   raw_api_layout = QtGui.QGridLayout()
   raw_api_layout.setColumnStretch(1, 1)
   raw_api_widget.setLayout(raw_api_layout)
 
+  # create monitor tab
   monitor_widget = QtGui.QWidget()
+  monitor_layout = QtGui.QGridLayout()
+  monitor_widget.setLayout(monitor_layout)
+  monitor_layout.addWidget(QtGui.QLabel("Coming soon..."),0,0)
+
+  # create graph tab
   graph_widget = QtGui.QWidget()
+  graph_layout = QtGui.QGridLayout()
+  graph_widget.setLayout(graph_layout)
+  graph_layout.addWidget(QtGui.QLabel("Coming soon..."),0,0)
+
+  # create devices tab
+  devices_widget = QtGui.QWidget()
+  devices_layout = QtGui.QGridLayout()
+  devices_widget.setLayout(devices_layout)
+  devices_layout.addWidget(QtGui.QLabel("Coming soon..."),0,0)
 
   id_select = pg.ComboBox()
   id_select.setEditable(True)
@@ -258,6 +274,7 @@ if __name__=="__main__":
   tab_widget.addTab(raw_api_widget, "Raw API")
   tab_widget.addTab(monitor_widget, "Monitor")
   tab_widget.addTab(graph_widget, "Graph")
+  tab_widget.addTab(devices_widget, "Devices")
 
 
   # set api request parameters
