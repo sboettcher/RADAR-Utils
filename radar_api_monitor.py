@@ -25,54 +25,84 @@ import pyqtgraph as pg
 
 import _thread
 
-global running, data, subject_sources, req_conf
+global running, raw_api_data, monitor_data, subjects, subject_sources, req_conf
 
 sourceTypes = ["ANDROID", "EMPATICA", "PEBBLE", "BIOVOTION"]
 sensors = ["ACCELEROMETER", "BATTERY", "BLOOD_VOLUME_PULSE", "ELECTRODERMAL_ACTIVITY", "INTER_BEAT_INTERVAL", "HEART_RATE", "THERMOMETER"]
 stats = ["AVERAGE", "COUNT", "MAXIMUM", "MEDIAN", "MINIMUM", "SUM", "INTERQUARTILE_RANGE", "LOWER_QUARTILE", "UPPER_QUARTILE", "QUARTILES", "RECEIVED_MESSAGES"]
 intervals = ["TEN_SECOND", "THIRTY_SECOND", "ONE_MIN", "TEN_MIN", "ONE_HOUR", "ONE_DAY", "ONE_WEEK"]
 
-methods = {
-            "get all subjects": "all_subjects",
-            "get all sources for a subject": "all_sources",
-            "get status of a source": "last_computed_source_status",
-            "get most recent aggregated sample": "last_received_sample"
-          }
+methods = [
+            "all_subjects",
+            "all_sources",
+            "last_computed_source_status",
+            "last_received_sample"
+          ]
+
+status_desc = {
+                "OK": {"threshold_min": 0, "color": "green"},
+                "WARNING": {"threshold_min": 2, "color": "yellow"},
+                "CRITICAL": {"threshold_min": 5, "color": "red"}
+              }
 
 
-
-
-def api_callback(response):
-  global running, data, subject_sources, req_conf
+def raw_api_callback(response):
+  global running, raw_api_data, monitor_data, subjects, subject_sources, req_conf
   if args.verbose and args.verbose > 1: pprint(response)
-  data = response
+  raw_api_data = response
+
+def monitor_callback(response):
+  global running, raw_api_data, monitor_data, subjects, subject_sources, req_conf
+  if args.verbose and args.verbose > 1: pprint(response)
+  #monitor_data = response
 
 
+def monitor(sources):
+  pass
 
 def api_thread(api_instance):
-  global running, data, subject_sources, req_conf
+  global running, raw_api_data, monitor_data, subjects, subject_sources, req_conf
 
   while(running):
+    time.sleep(args.api_refresh/1000.)
+    # always get list of subjects and sources first, everything else depends on this
+    get_subjects_sources_info()
+
     try:
+      if (tab_widget.currentIndex() == 0):
+        cb = raw_api_callback
+      else:
+        continue
+
       if req_conf["method"] == "all_subjects":
-        thread = api_instance.get_all_subjects_json("0", callback=api_callback)
+        thread = api_instance.get_all_subjects_json("0", callback=cb)
 
       elif req_conf["method"] == "all_sources":
         if req_conf["subjectId"]:
-          thread = api_instance.get_all_sources_json(req_conf["subjectId"], callback=api_callback)
+          thread = api_instance.get_all_sources_json(req_conf["subjectId"], callback=cb)
 
       elif req_conf["method"] == "last_computed_source_status":
         if req_conf["subjectId"] and req_conf["sourceId"]:
-          thread = api_instance.get_last_computed_source_status_json(req_conf["subjectId"], req_conf["sourceId"], callback=api_callback)
+          thread = api_instance.get_last_computed_source_status_json(req_conf["subjectId"], req_conf["sourceId"], callback=cb)
 
       elif req_conf["method"] == "last_received_sample":
         if req_conf["subjectId"] and req_conf["sourceId"] and req_conf["sensor"] and req_conf["stat"] and req_conf["interval"]:
-          thread = api_instance.get_last_received_sample_json(req_conf["sensor"], req_conf["stat"], req_conf["interval"], req_conf["subjectId"], req_conf["sourceId"], callback=api_callback)
+          thread = api_instance.get_last_received_sample_json(req_conf["sensor"], req_conf["stat"], req_conf["interval"], req_conf["subjectId"], req_conf["sourceId"], callback=cb)
 
     except ApiException as e:
       print("Exception when calling DefaultApi->get_[]: %s\n" % e)
 
-    time.sleep(args.api_refresh/1000.)
+
+def get_subjects_sources_info():
+  global running, raw_api_data, monitor_data, subjects, subject_sources, req_conf
+  try:
+    #subjects = api_instance.get_all_subjects_json("0")
+    for s in subjects:
+      sources_tmp = api_instance.get_all_sources_json(s)
+      if sources_tmp: subject_sources[s] = [ sid["id"] for sid in sources_tmp["sources"] if sid["type"] == "EMPATICA" ]
+    pprint(subject_sources)
+  except ApiException as e:
+    print("Exception when calling DefaultApi->get_all_sources_json[]: %s\n" % e)
 
 
 
@@ -84,25 +114,26 @@ def sort_tree_item(treeitem):
 
 
 def update_gui():
-  global running, data, subject_sources, req_conf
+  global running, raw_api_data, monitor_data, subjects, subject_sources, req_conf
   # check for updated subjectId
   if req_conf["subjectId"] != id_select.currentText() and len(id_select.currentText()) > 0:
-    sources_tmp = None
-    try:
-      sources_tmp = api_instance.get_all_sources_json(id_select.currentText())
-    except ApiException as e:
-      print("Exception when calling DefaultApi->get_all_sources_json: %s\n" % e)
-    if sources_tmp: subject_sources = [ sid for sid in sources_tmp["sources"] if sid["type"] == "EMPATICA" ]
     source_select.clear()
-    source_select.addItems([s["id"] for s in subject_sources])
-    if len(subject_sources) == 0: id_select.lineEdit().setStyleSheet("background-color: rgb(255, 0, 0);")
+    if id_select.currentText() in subject_sources:
+      source_select.addItems(subject_sources[id_select.currentText()])
+    if id_select.currentText() not in subject_sources or len(subject_sources[id_select.currentText()]) == 0: id_select.lineEdit().setStyleSheet("background-color: rgb(255, 0, 0);")
     else: id_select.lineEdit().setStyleSheet("background-color: rgb(255, 255, 255);")
 
   # update data tree
-  data_tree.setData(data)
+  data_tree.setData(raw_api_data)
   data_tree.sortItems(0,0)
   for i in range(data_tree.topLevelItemCount()):
     sort_tree_item(data_tree.topLevelItem(i))
+
+  # update monitor tree
+  monitor_tree.setData(monitor_data)
+  monitor_tree.sortItems(0,0)
+  for i in range(monitor_tree.topLevelItemCount()):
+    sort_tree_item(monitor_tree.topLevelItem(i))
 
   # update config
   req_conf["method"] = method_select.value()
@@ -134,7 +165,7 @@ def update_gui():
 
 
 if __name__=="__main__":
-  global running, data, subject_sources, req_conf
+  global running, raw_api_data, monitor_data, subjects, subject_sources, req_conf
   class Formatter(argparse.ArgumentDefaultsHelpFormatter, argparse.RawTextHelpFormatter): pass
   cmdline = argparse.ArgumentParser(description="RADAR-CNS api monitor", formatter_class=Formatter)
 
@@ -153,7 +184,7 @@ if __name__=="__main__":
   cmdline.add_argument('--sensor', type=str, help="start with this sensor selected\n", choices=sensors)
   cmdline.add_argument('--stat', type=str, help="start with this stat selected\n", choices=stats)
   cmdline.add_argument('--interval', type=str, help="start with this interval selected\n", choices=intervals)
-  cmdline.add_argument('-m', '--method', type=str, default="all_sources", help="start with this method selected\n", choices=methods.values())
+  cmdline.add_argument('-m', '--method', type=str, default="all_sources", help="start with this method selected\n", choices=methods)
 
 
   #cmdline.add_argument('--num-samples', '-n', type=int, default=0,     help="plot the last n samples, 0 keeps all\n")
@@ -162,21 +193,17 @@ if __name__=="__main__":
   args = cmdline.parse_args()
 
   running = False
-  data = dict()
-  subject_sources = list()
+  raw_api_data = dict()
+  monitor_data = list()
+  subjects = ["UKLFR","LTT_1","LTT_2","LTT_3"]
+  subject_sources = dict()
   req_conf = dict()
 
   # create an instance of the API class
   api_instance = swagger_client.DefaultApi()
 
   # get some api info
-  try:
-    subject_sources = api_instance.get_all_sources_json(args.userid)
-  except ApiException as e:
-    print("Exception when calling DefaultApi->get_all_sources_json: %s\n" % e)
-
-  # filter only empaticas
-  subject_sources = [ sid for sid in subject_sources["sources"] if sid["type"] == "EMPATICA" ]
+  get_subjects_sources_info()
 
   # Enable antialiasing for prettier plots
   pg.setConfigOptions(antialias=True)
@@ -222,17 +249,18 @@ if __name__=="__main__":
   devices_widget.setLayout(devices_layout)
   devices_layout.addWidget(QtGui.QLabel("Coming soon..."),0,0)
 
+  # add subject selection field
   id_select = pg.ComboBox()
   id_select.setEditable(True)
-  #id_select.addItems([s["id"] for s in subjects])
-  id_select.addItems(["UKLFR","LTT_1","LTT_2","LTT_3"])
+  id_select.addItems(subjects)
   if args.userid and id_select.findText(args.userid) > -1: id_select.setValue(args.userid)
   raw_api_layout.addWidget(QtGui.QLabel("Patient ID"),0,0)
   raw_api_layout.addWidget(id_select,0,1)
 
   # add source selection field
   source_select = pg.ComboBox()
-  source_select.addItems([s["id"] for s in subject_sources])
+  if args.userid in subject_sources:
+    source_select.addItems(subject_sources[args.userid])
   if args.sourceid and source_select.findText(args.sourceid) > -1: source_select.setValue(args.sourceid)
   source_select.setEnabled(False)
   raw_api_layout.addWidget(QtGui.QLabel("Device ID"),1,0)
@@ -264,7 +292,7 @@ if __name__=="__main__":
 
   # add method selection field
   method_select = pg.ComboBox()
-  method_select.addItems(collections.OrderedDict(sorted(methods.items())))
+  method_select.addItems(methods)
   if args.method: method_select.setValue(args.method)
   raw_api_layout.addWidget(QtGui.QLabel("Method"),5,0)
   raw_api_layout.addWidget(method_select,5,1)
@@ -272,6 +300,11 @@ if __name__=="__main__":
   # add data tree for response vis
   data_tree = pg.DataTreeWidget()
   raw_api_layout.addWidget(data_tree,6,0,1,2)
+
+
+  # add data tree for response vis
+  monitor_tree = pg.DataTreeWidget()
+  monitor_layout.addWidget(monitor_tree,0,0)
 
 
   # add main widgets as tabs
