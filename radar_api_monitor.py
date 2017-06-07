@@ -33,10 +33,10 @@ stats = ["AVERAGE", "COUNT", "MAXIMUM", "MEDIAN", "MINIMUM", "SUM", "INTERQUARTI
 intervals = ["TEN_SECOND", "THIRTY_SECOND", "ONE_MIN", "TEN_MIN", "ONE_HOUR", "ONE_DAY", "ONE_WEEK"]
 
 methods = {
-            "all_subjects": "get_all_subjects_json",
-            "all_sources": "get_all_sources_json",
-            "last_computed_source_status": "get_last_computed_source_status_json",
-            "last_received_sample": "get_last_received_sample_json"
+            "get all subjects": "all_subjects",
+            "get all sources for a subject": "all_sources",
+            "get status of a source": "last_computed_source_status",
+            "get most recent aggregated sample": "last_received_sample"
           }
 
 
@@ -54,17 +54,21 @@ def api_thread(api_instance):
 
   while(running):
     try:
-      if req_conf["method"] == "get_all_subjects_json":
+      if req_conf["method"] == "all_subjects":
         thread = api_instance.get_all_subjects_json("0", callback=api_callback)
-      elif req_conf["method"] == "get_all_sources_json":
+
+      elif req_conf["method"] == "all_sources":
         if req_conf["subjectId"]:
           thread = api_instance.get_all_sources_json(req_conf["subjectId"], callback=api_callback)
-      elif req_conf["method"] == "get_last_computed_source_status_json":
+
+      elif req_conf["method"] == "last_computed_source_status":
         if req_conf["subjectId"] and req_conf["sourceId"]:
           thread = api_instance.get_last_computed_source_status_json(req_conf["subjectId"], req_conf["sourceId"], callback=api_callback)
-      elif req_conf["method"] == "get_last_received_sample_json":
+
+      elif req_conf["method"] == "last_received_sample":
         if req_conf["subjectId"] and req_conf["sourceId"] and req_conf["sensor"] and req_conf["stat"] and req_conf["interval"]:
           thread = api_instance.get_last_received_sample_json(req_conf["sensor"], req_conf["stat"], req_conf["interval"], req_conf["subjectId"], req_conf["sourceId"], callback=api_callback)
+
     except ApiException as e:
       print("Exception when calling DefaultApi->get_[]: %s\n" % e)
 
@@ -109,17 +113,17 @@ def update_gui():
   req_conf["interval"] = interval_select.value()
 
   # disable widgets according to method
-  if req_conf["method"] == "get_all_sources_json":
+  if req_conf["method"] == "all_sources":
     source_select.setEnabled(False)
     sensor_select.setEnabled(False)
     stat_select.setEnabled(False)
     interval_select.setEnabled(False)
-  elif req_conf["method"] == "get_last_computed_source_status_json":
+  elif req_conf["method"] == "last_computed_source_status":
     source_select.setEnabled(True)
     sensor_select.setEnabled(False)
     stat_select.setEnabled(False)
     interval_select.setEnabled(False)
-  elif req_conf["method"] == "get_last_received_sample_json":
+  elif req_conf["method"] == "last_received_sample":
     source_select.setEnabled(True)
     sensor_select.setEnabled(True)
     stat_select.setEnabled(True)
@@ -149,7 +153,7 @@ if __name__=="__main__":
   cmdline.add_argument('--sensor', type=str, help="start with this sensor selected\n", choices=sensors)
   cmdline.add_argument('--stat', type=str, help="start with this stat selected\n", choices=stats)
   cmdline.add_argument('--interval', type=str, help="start with this interval selected\n", choices=intervals)
-  cmdline.add_argument('-m', '--method', type=str, default="all_sources", help="start with this method selected\n", choices=methods.keys())
+  cmdline.add_argument('-m', '--method', type=str, default="all_sources", help="start with this method selected\n", choices=methods.values())
 
 
   #cmdline.add_argument('--num-samples', '-n', type=int, default=0,     help="plot the last n samples, 0 keeps all\n")
@@ -260,8 +264,8 @@ if __name__=="__main__":
 
   # add method selection field
   method_select = pg.ComboBox()
-  method_select.addItems(methods)
-  if args.method: method_select.setValue(methods[args.method])
+  method_select.addItems(collections.OrderedDict(sorted(methods.items())))
+  if args.method: method_select.setValue(args.method)
   raw_api_layout.addWidget(QtGui.QLabel("Method"),5,0)
   raw_api_layout.addWidget(method_select,5,1)
 
