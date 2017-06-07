@@ -40,11 +40,12 @@ methods = [
           ]
 
 status_desc = {
-                "OK": {"threshold_min": 0, "color": "green"},
-                "WARNING": {"threshold_min": 2, "color": "yellow"},
+                "GOOD": {"threshold_min": 0, "color": "lightgreen"},
+                "OK": {"threshold_min": 2, "color": "moccasin"},
+                "WARNING": {"threshold_min": 3, "color": "orange"},
                 "CRITICAL": {"threshold_min": 5, "color": "red"},
-                "DISCONNECTED": {"threshold_min": 60, "color": "grey"},
-                "N/A": {"threshold_min": None, "color": "white"}
+                "DISCONNECTED": {"threshold_min": 30, "color": "transparent"},
+                "N/A": {"threshold_min": None, "color": "lightgrey"}
               }
 
 
@@ -59,7 +60,7 @@ def monitor_callback(response):
 
   patient_id = response["header"]["patientId"]
   source_id = response["header"]["sourceId"]
-  status = "OK"
+  status = "GOOD"
   stamp = response["header"]["effectiveTimeFrame"]["endDateTime"]
 
   for i in range(len(monitor_data)):
@@ -197,6 +198,9 @@ def update_gui():
   elif (tab_widget.currentIndex() == 1):
     # update monitor table
     monitor_table.setData(monitor_data)
+    for status in status_desc.keys():
+      for item in monitor_table.findItems(status, QtCore.Qt.MatchExactly):
+        item.setBackground(QtGui.QBrush(QtGui.QColor(status_desc[status]["color"])))
 
 
 
