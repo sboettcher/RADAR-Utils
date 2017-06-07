@@ -33,6 +33,7 @@ stats = ["AVERAGE", "COUNT", "MAXIMUM", "MEDIAN", "MINIMUM", "SUM", "INTERQUARTI
 intervals = ["TEN_SECOND", "THIRTY_SECOND", "ONE_MIN", "TEN_MIN", "ONE_HOUR", "ONE_DAY", "ONE_WEEK"]
 
 methods = {
+            "all_subjects": "get_all_subjects_json",
             "all_sources": "get_all_sources_json",
             "last_computed_source_status": "get_last_computed_source_status_json",
             "last_received_sample": "get_last_received_sample_json"
@@ -53,7 +54,9 @@ def api_thread(api_instance):
 
   while(running):
     try:
-      if req_conf["method"] == "get_all_sources_json":
+      if req_conf["method"] == "get_all_subjects_json":
+        thread = api_instance.get_all_subjects_json("0", callback=api_callback)
+      elif req_conf["method"] == "get_all_sources_json":
         if req_conf["subjectId"]:
           thread = api_instance.get_all_sources_json(req_conf["subjectId"], callback=api_callback)
       elif req_conf["method"] == "get_last_computed_source_status_json":
@@ -79,17 +82,17 @@ def sort_tree_item(treeitem):
 def update_gui():
   global running, data, subject_sources, req_conf
   # check for updated subjectId
-  if req_conf["subjectId"] != id_text.text() and len(id_text.text()) > 0:
+  if req_conf["subjectId"] != id_select.currentText() and len(id_select.currentText()) > 0:
     sources_tmp = None
     try:
-      sources_tmp = api_instance.get_all_sources_json(id_text.text())
+      sources_tmp = api_instance.get_all_sources_json(id_select.currentText())
     except ApiException as e:
       print("Exception when calling DefaultApi->get_all_sources_json: %s\n" % e)
     if sources_tmp: subject_sources = [ sid for sid in sources_tmp["sources"] if sid["type"] == "EMPATICA" ]
     source_select.clear()
     source_select.addItems([s["id"] for s in subject_sources])
-    if len(subject_sources) == 0: id_text.setStyleSheet("background-color: rgb(255, 0, 0);")
-    else: id_text.setStyleSheet("background-color: rgb(255, 255, 255);")
+    if len(subject_sources) == 0: id_select.lineEdit().setStyleSheet("background-color: rgb(255, 0, 0);")
+    else: id_select.lineEdit().setStyleSheet("background-color: rgb(255, 255, 255);")
 
   # update data tree
   data_tree.setData(data)
@@ -99,7 +102,7 @@ def update_gui():
 
   # update config
   req_conf["method"] = method_select.value()
-  req_conf["subjectId"] = id_text.text()
+  req_conf["subjectId"] = id_select.currentText()
   req_conf["sourceId"] = source_select.value()
   req_conf["sensor"] = sensor_select.value()
   req_conf["stat"] = stat_select.value()
@@ -187,63 +190,79 @@ if __name__=="__main__":
   win = QtGui.QMainWindow()
   win.setWindowTitle(args.title)
   win.resize(900,900)
-  cw = QtGui.QWidget()
-  win.setCentralWidget(cw)
-  layout = QtGui.QGridLayout()
-  cw.setLayout(layout)
 
-  # add patient ID text widget
-  id_text = QtGui.QLineEdit()
-  if args.userid: id_text.setText(args.userid)
-  layout.addWidget(QtGui.QLabel("Patient ID"),0,0)
-  layout.addWidget(id_text,0,1)
+  tab_widget = QtGui.QTabWidget()
+  win.setCentralWidget(tab_widget)
+
+  raw_api_widget = QtGui.QWidget()
+  raw_api_layout = QtGui.QGridLayout()
+  raw_api_layout.setColumnStretch(1, 1)
+  raw_api_widget.setLayout(raw_api_layout)
+
+  monitor_widget = QtGui.QWidget()
+  graph_widget = QtGui.QWidget()
+
+  id_select = pg.ComboBox()
+  id_select.setEditable(True)
+  #id_select.addItems([s["id"] for s in subjects])
+  id_select.addItems(["UKLFR","LTT_1","LTT_2","LTT_3"])
+  if args.userid and id_select.findText(args.userid) > -1: id_select.setValue(args.userid)
+  raw_api_layout.addWidget(QtGui.QLabel("Patient ID"),0,0)
+  raw_api_layout.addWidget(id_select,0,1)
 
   # add source selection field
   source_select = pg.ComboBox()
   source_select.addItems([s["id"] for s in subject_sources])
   if args.sourceid and source_select.findText(args.sourceid) > -1: source_select.setValue(args.sourceid)
   source_select.setEnabled(False)
-  layout.addWidget(QtGui.QLabel("Device ID"),1,0)
-  layout.addWidget(source_select,1,1)
+  raw_api_layout.addWidget(QtGui.QLabel("Device ID"),1,0)
+  raw_api_layout.addWidget(source_select,1,1)
 
   # add sensor selection field
   sensor_select = pg.ComboBox()
   sensor_select.addItems(sensors)
   if args.sensor: sensor_select.setValue(args.sensor)
   sensor_select.setEnabled(False)
-  layout.addWidget(QtGui.QLabel("Sensor"),2,0)
-  layout.addWidget(sensor_select,2,1)
+  raw_api_layout.addWidget(QtGui.QLabel("Sensor"),2,0)
+  raw_api_layout.addWidget(sensor_select,2,1)
 
   # add stat selection field
   stat_select = pg.ComboBox()
   stat_select.addItems(stats)
   if args.stat: stat_select.setValue(args.stat)
   stat_select.setEnabled(False)
-  layout.addWidget(QtGui.QLabel("Stat"),3,0)
-  layout.addWidget(stat_select,3,1)
+  raw_api_layout.addWidget(QtGui.QLabel("Stat"),3,0)
+  raw_api_layout.addWidget(stat_select,3,1)
 
   # add interval selection field
   interval_select = pg.ComboBox()
   interval_select.addItems(intervals)
   if args.interval: interval_select.setValue(args.interval)
   interval_select.setEnabled(False)
-  layout.addWidget(QtGui.QLabel("Interval"),4,0)
-  layout.addWidget(interval_select,4,1)
+  raw_api_layout.addWidget(QtGui.QLabel("Interval"),4,0)
+  raw_api_layout.addWidget(interval_select,4,1)
 
   # add method selection field
   method_select = pg.ComboBox()
   method_select.addItems(methods)
   if args.method: method_select.setValue(methods[args.method])
-  layout.addWidget(QtGui.QLabel("Method"),5,0)
-  layout.addWidget(method_select,5,1)
+  raw_api_layout.addWidget(QtGui.QLabel("Method"),5,0)
+  raw_api_layout.addWidget(method_select,5,1)
 
   # add data tree for response vis
   data_tree = pg.DataTreeWidget()
-  layout.addWidget(data_tree,6,0,1,2)
+  raw_api_layout.addWidget(data_tree,6,0,1,2)
+
+
+  # add main widgets as tabs
+  tab_widget.addTab(raw_api_widget, "Raw API")
+  tab_widget.addTab(monitor_widget, "Monitor")
+  tab_widget.addTab(graph_widget, "Graph")
+
 
   # set api request parameters
   req_conf["method"] = method_select.value()
-  req_conf["subjectId"] = id_text.text()
+  req_conf["subjectId"] = id_select.currentText()
   req_conf["sourceId"] = source_select.value()
   req_conf["sensor"] = sensor_select.value()
   req_conf["stat"] = stat_select.value()
