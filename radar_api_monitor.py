@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-import sys, os, time
+import sys, os, time, datetime
 import argparse, json, fileinput
 from inspect import isclass
 import copy
@@ -45,7 +45,7 @@ status_desc = {
                 "WARNING": {"threshold_min": 3, "color": "orange"},
                 "CRITICAL": {"threshold_min": 5, "color": "red"},
                 "DISCONNECTED": {"threshold_min": 30, "color": "transparent"},
-                "N/A": {"threshold_min": None, "color": "lightgrey"}
+                "N/A": {"threshold_min": -1, "color": "lightgrey"}
               }
 
 
@@ -60,13 +60,24 @@ def monitor_callback(response):
 
   patient_id = response["header"]["patientId"]
   source_id = response["header"]["sourceId"]
-  status = "GOOD"
+  status = "N/A"
   stamp = response["header"]["effectiveTimeFrame"]["endDateTime"]
+
+  now = datetime.datetime.utcnow()
+  stamp_date = datetime.datetime.strptime(stamp, "%Y-%m-%dT%H:%M:%SZ")
+  diff = now - stamp_date
+  #print(now, "->", stamp_date, "|", str(diff).split(".")[0])
+
+  for st in sorted(status_desc.items(), key=lambda x: x[1]['threshold_min']):
+    th = st[1]["threshold_min"]
+    if th >= 0 and diff >= datetime.timedelta(minutes=th):
+      status = st[0]
 
   for i in range(len(monitor_data)):
     if monitor_data[i]["patientId"] == patient_id and monitor_data[i]["sourceId"] == source_id:
       monitor_data[i]["status"] = status
       monitor_data[i]["stamp"] = stamp
+      monitor_data[i]["diff"] = str(diff).split(".")[0]
       break
 
 
@@ -138,6 +149,7 @@ def get_subjects_sources_info():
       row["sourceId"] = src
       row["status"] = "N/A"
       row["stamp"] = "-"
+      row["diff"] = "-"
       monitor_data.append(row)
 
 
