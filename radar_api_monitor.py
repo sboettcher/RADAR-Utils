@@ -42,7 +42,9 @@ methods = [
 status_desc = {
                 "OK": {"threshold_min": 0, "color": "green"},
                 "WARNING": {"threshold_min": 2, "color": "yellow"},
-                "CRITICAL": {"threshold_min": 5, "color": "red"}
+                "CRITICAL": {"threshold_min": 5, "color": "red"},
+                "DISCONNECTED": {"threshold_min": 60, "color": "grey"},
+                "N/A": {"threshold_min": None, "color": "white"}
               }
 
 
@@ -54,15 +56,25 @@ def raw_api_callback(response):
 def monitor_callback(response):
   global running, raw_api_data, monitor_data, subjects, subject_sources, req_conf
   if args.verbose and args.verbose > 1: pprint(response)
-  #monitor_data = response
+
+  patient_id = response["header"]["patientId"]
+  source_id = response["header"]["sourceId"]
+  status = "OK"
+  stamp = response["header"]["effectiveTimeFrame"]["endDateTime"]
+
+  for i in range(len(monitor_data)):
+    if monitor_data[i]["patientId"] == patient_id and monitor_data[i]["sourceId"] == source_id:
+      monitor_data[i]["status"] = status
+      monitor_data[i]["stamp"] = stamp
+      break
 
 
-def monitor(sources):
-  pass
+
 
 def api_thread(api_instance):
   global running, raw_api_data, monitor_data, subjects, subject_sources, req_conf
 
+  monitor_index = 0
   while(running):
     time.sleep(args.api_refresh/1000.)
     # always get list of subjects and sources first, everything else depends on this
@@ -71,6 +83,13 @@ def api_thread(api_instance):
     try:
       if (tab_widget.currentIndex() == 0):
         cb = raw_api_callback
+      elif (tab_widget.currentIndex() == 1):
+        cb = monitor_callback
+        for sub in subject_sources.keys():
+          for src in subject_sources[sub]:
+            thread = api_instance.get_last_received_sample_json("ACCELEROMETER", "AVERAGE", "TEN_SECOND", sub, src, callback=cb)
+            time.sleep(0.1)
+        continue
       else:
         continue
 
@@ -100,9 +119,26 @@ def get_subjects_sources_info():
     for s in subjects:
       sources_tmp = api_instance.get_all_sources_json(s)
       if sources_tmp: subject_sources[s] = [ sid["id"] for sid in sources_tmp["sources"] if sid["type"] == "EMPATICA" ]
-    pprint(subject_sources)
   except ApiException as e:
     print("Exception when calling DefaultApi->get_all_sources_json[]: %s\n" % e)
+
+  # update monitor list
+  for sub in sorted(subject_sources.keys()):
+    for src in subject_sources[sub]:
+      # check if entry already exists, skip if yes
+      exists = False
+      for i in range(len(monitor_data)):
+        if monitor_data[i]["patientId"] == sub and monitor_data[i]["sourceId"] == src:
+          exists = True
+      if len(monitor_data) > 0 and exists: continue
+
+      row = collections.OrderedDict()
+      row["patientId"] = sub
+      row["sourceId"] = src
+      row["status"] = "N/A"
+      row["stamp"] = "-"
+      monitor_data.append(row)
+
 
 
 
@@ -115,51 +151,52 @@ def sort_tree_item(treeitem):
 
 def update_gui():
   global running, raw_api_data, monitor_data, subjects, subject_sources, req_conf
-  # check for updated subjectId
-  if req_conf["subjectId"] != id_select.currentText() and len(id_select.currentText()) > 0:
-    source_select.clear()
-    if id_select.currentText() in subject_sources:
-      source_select.addItems(subject_sources[id_select.currentText()])
-    if id_select.currentText() not in subject_sources or len(subject_sources[id_select.currentText()]) == 0: id_select.lineEdit().setStyleSheet("background-color: rgb(255, 0, 0);")
-    else: id_select.lineEdit().setStyleSheet("background-color: rgb(255, 255, 255);")
 
-  # update data tree
-  data_tree.setData(raw_api_data)
-  data_tree.sortItems(0,0)
-  for i in range(data_tree.topLevelItemCount()):
-    sort_tree_item(data_tree.topLevelItem(i))
+  # raw api tab
+  if (tab_widget.currentIndex() == 0):
+    # check for updated subjectId
+    if req_conf["subjectId"] != id_select.currentText() and len(id_select.currentText()) > 0:
+      source_select.clear()
+      if id_select.currentText() in subject_sources:
+        source_select.addItems(subject_sources[id_select.currentText()])
+        if id_select.currentText() not in subject_sources or len(subject_sources[id_select.currentText()]) == 0: id_select.lineEdit().setStyleSheet("background-color: rgb(255, 0, 0);")
+      else: id_select.lineEdit().setStyleSheet("background-color: rgb(255, 255, 255);")
 
-  # update monitor tree
-  monitor_tree.setData(monitor_data)
-  monitor_tree.sortItems(0,0)
-  for i in range(monitor_tree.topLevelItemCount()):
-    sort_tree_item(monitor_tree.topLevelItem(i))
+    # update data tree
+    data_tree.setData(raw_api_data)
+    data_tree.sortItems(0,0)
+    for i in range(data_tree.topLevelItemCount()):
+      sort_tree_item(data_tree.topLevelItem(i))
 
-  # update config
-  req_conf["method"] = method_select.value()
-  req_conf["subjectId"] = id_select.currentText()
-  req_conf["sourceId"] = source_select.value()
-  req_conf["sensor"] = sensor_select.value()
-  req_conf["stat"] = stat_select.value()
-  req_conf["interval"] = interval_select.value()
+    # update config
+    req_conf["method"] = method_select.value()
+    req_conf["subjectId"] = id_select.currentText()
+    req_conf["sourceId"] = source_select.value()
+    req_conf["sensor"] = sensor_select.value()
+    req_conf["stat"] = stat_select.value()
+    req_conf["interval"] = interval_select.value()
 
-  # disable widgets according to method
-  if req_conf["method"] == "all_sources":
-    source_select.setEnabled(False)
-    sensor_select.setEnabled(False)
-    stat_select.setEnabled(False)
-    interval_select.setEnabled(False)
-  elif req_conf["method"] == "last_computed_source_status":
-    source_select.setEnabled(True)
-    sensor_select.setEnabled(False)
-    stat_select.setEnabled(False)
-    interval_select.setEnabled(False)
-  elif req_conf["method"] == "last_received_sample":
-    source_select.setEnabled(True)
-    sensor_select.setEnabled(True)
-    stat_select.setEnabled(True)
-    interval_select.setEnabled(True)
+    # disable widgets according to method
+    if req_conf["method"] == "all_sources":
+      source_select.setEnabled(False)
+      sensor_select.setEnabled(False)
+      stat_select.setEnabled(False)
+      interval_select.setEnabled(False)
+    elif req_conf["method"] == "last_computed_source_status":
+      source_select.setEnabled(True)
+      sensor_select.setEnabled(False)
+      stat_select.setEnabled(False)
+      interval_select.setEnabled(False)
+    elif req_conf["method"] == "last_received_sample":
+      source_select.setEnabled(True)
+      sensor_select.setEnabled(True)
+      stat_select.setEnabled(True)
+      interval_select.setEnabled(True)
 
+  # monitor tab
+  elif (tab_widget.currentIndex() == 1):
+    # update monitor table
+    monitor_table.setData(monitor_data)
 
 
 
@@ -177,7 +214,9 @@ if __name__=="__main__":
   cmdline.add_argument('-c', '--pen-color', metavar='COLOR', type=str, default="r", help="plot line pen color\n", choices=['b', 'g', 'r', 'c', 'm', 'y', 'k', 'w'])
 
   cmdline.add_argument('-ra', '--api-refresh', type=float, default=1000., help="api refresh rate (ms)\n")
-  cmdline.add_argument('-rg', '--gui-refresh', type=float, default=500., help="gui refresh rate (ms)\n")
+  cmdline.add_argument('-rg', '--gui-refresh', type=float, default=1000., help="gui refresh rate (ms)\n")
+
+  cmdline.add_argument('--start-tab', type=int, default=0, help="start with this tab selected\n")
 
   cmdline.add_argument('-u', '--userid', type=str, default="UKLFR", help="start with this userId selected\n")
   cmdline.add_argument('-s', '--sourceid', type=str, help="start with this sourceId selected\n")
@@ -204,6 +243,8 @@ if __name__=="__main__":
 
   # get some api info
   get_subjects_sources_info()
+
+
 
   # Enable antialiasing for prettier plots
   pg.setConfigOptions(antialias=True)
@@ -303,8 +344,8 @@ if __name__=="__main__":
 
 
   # add data tree for response vis
-  monitor_tree = pg.DataTreeWidget()
-  monitor_layout.addWidget(monitor_tree,0,0)
+  monitor_table = pg.TableWidget()
+  monitor_layout.addWidget(monitor_table,0,0)
 
 
   # add main widgets as tabs
@@ -312,6 +353,8 @@ if __name__=="__main__":
   tab_widget.addTab(monitor_widget, "Monitor")
   tab_widget.addTab(graph_widget, "Graph")
   tab_widget.addTab(devices_widget, "Devices")
+
+  tab_widget.setCurrentIndex(args.start_tab)
 
 
   # set api request parameters
