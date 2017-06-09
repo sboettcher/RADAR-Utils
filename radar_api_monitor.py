@@ -162,6 +162,33 @@ def sort_tree_item(treeitem):
     sort_tree_item(treeitem.child(c))
 
 
+def table_contains_data(table, data, colcheck=[0]):
+  data = list(data.items())
+  for r in range(table.rowCount()):
+    equal = 0
+    for c in colcheck:
+      if table.item(r,c).text() == data[c][1]: equal += 1
+    if equal == len(colcheck): return r
+  return -1
+
+def table_add_data(table, data, colcheck=[0]):
+  row = table_contains_data(table, data, colcheck)
+  data = list(data.items())
+  assert table.columnCount() == len(data)
+  if row < 0:
+    row = table.rowCount()
+    table.insertRow(row)
+    for i in range(table.columnCount()):
+      table.setItem(row, i, QtGui.QTableWidgetItem(data[i][1]))
+  else:
+    for i in range(table.columnCount()):
+      table.item(row,i).setText(data[i][1])
+
+def table_clear(table, keep):
+  for r in [ r for r in reversed(range(table.rowCount())) if r not in keep ]:
+    table.removeRow(r)
+
+
 def update_gui():
   global running, raw_api_data, monitor_data, subjects, subject_sources, req_conf
 
@@ -208,8 +235,20 @@ def update_gui():
 
   # monitor tab
   elif (tab_widget.currentIndex() == 1):
-    # update monitor table
-    monitor_table.setData([ d for d in monitor_data if monitor_view_all_check.isChecked() or (d["status"]!="DISCONNECTED" and d["status"]!="N/A") ])
+    # filter monitor data
+    dataset = [ d for d in monitor_data if monitor_view_all_check.isChecked() or (d["status"]!="DISCONNECTED" and d["status"]!="N/A") ]
+
+    # clear table
+    contains = []
+    for d in dataset:
+      c = table_contains_data(monitor_table, d, [0,1])
+      if c > -1: contains.append(c)
+    table_clear(monitor_table, contains)
+
+    # add/replace data
+    for d in dataset:
+      table_add_data(monitor_table, d, [0,1])
+
     for status in status_desc.keys():
       for item in monitor_table.findItems(status, QtCore.Qt.MatchExactly):
         item.setBackground(QtGui.QBrush(QtGui.QColor(status_desc[status]["color"])))
@@ -376,11 +415,13 @@ if __name__=="__main__":
 
   # add table for monitor overview
   monitor_view_all_check = QtGui.QCheckBox("View all sources")
+  #monitor_view_all_check.setChecked(True)
   monitor_layout.addWidget(monitor_view_all_check,0,0)
 
-  monitor_table = pg.TableWidget()
+  monitor_table = QtGui.QTableWidget(0,5)
+  monitor_table.setHorizontalHeaderLabels(["patientId","sourceId","status","stamp","diff"])
+  monitor_table.horizontalHeader().setSectionResizeMode(QtGui.QHeaderView.ResizeToContents)
   monitor_layout.addWidget(monitor_table,1,0)
-
 
 
 
