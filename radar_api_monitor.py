@@ -40,12 +40,12 @@ methods = [
           ]
 
 status_desc = {
-                "GOOD": {"threshold_min": 0, "color": "lightgreen"},
-                "OK": {"threshold_min": 2, "color": "moccasin"},
-                "WARNING": {"threshold_min": 3, "color": "orange"},
-                "CRITICAL": {"threshold_min": 5, "color": "red"},
-                "DISCONNECTED": {"threshold_min": 30, "color": "transparent"},
-                "N/A": {"threshold_min": -1, "color": "lightgrey"}
+                "GOOD": {"priority": 1, "threshold_min": 0, "color": "lightgreen"},
+                "OK": {"priority": 2, "threshold_min": 2, "color": "moccasin"},
+                "WARNING": {"priority": 3, "threshold_min": 3, "color": "orange"},
+                "CRITICAL": {"priority": 4, "threshold_min": 5, "color": "red"},
+                "DISCONNECTED": {"priority": 0, "threshold_min": 30, "color": "transparent"},
+                "N/A": {"priority": -1, "threshold_min": -1, "color": "lightgrey"}
               }
 
 def eprint(*args, **kwargs):
@@ -68,9 +68,11 @@ def monitor_callback(response):
     status = "N/A"
     stamp = response["header"]["effectiveTimeFrame"]["endDateTime"]
   except TypeError as ex:
-    eprint("WARN: TypeError in monitor_callback:", ex)
+    if args.verbose: eprint("WARN: TypeError in monitor_callback:", ex)
     return
 
+
+  # update monitor table data
   now = datetime.datetime.utcnow()
   stamp_date = datetime.datetime.strptime(stamp, "%Y-%m-%dT%H:%M:%SZ")
   diff = now - stamp_date
@@ -142,9 +144,10 @@ def get_subjects_sources_info():
   except ApiException as e:
     print("Exception when calling DefaultApi->get_all_sources_json[]: %s\n" % e)
 
-  # update monitor list
+  # update monitor data
   for sub in sorted(subject_sources.keys()):
     for src in subject_sources[sub]:
+      # update monitor sources list
       # check if entry already exists, skip if yes
       exists = False
       for i in range(len(monitor_data)):
@@ -186,7 +189,7 @@ def table_contains_data(table, data, colcheck=[0]):
 def table_add_data(table, data, colcheck=[0]):
   if not isinstance(data, list): data = list(data.items())
   row = table_contains_data(table, data, colcheck)
-  assert table.columnCount() == len(data)
+  #assert table.columnCount() == len(data)
   if row < 0:
     row = table.rowCount()
     table.insertRow(row)
@@ -249,7 +252,7 @@ def update_gui():
   # monitor tab
   elif (tab_widget.currentIndex() == 1):
     # filter monitor data
-    dataset = [ d for d in monitor_data if monitor_view_all_check.isChecked() or (d["status"]!="DISCONNECTED" and d["status"]!="N/A") ]
+    dataset = [ d for d in monitor_data if monitor_view_all_check.isChecked() or status_desc[d["status"]]["priority"] > 0 ]
 
     # clear table
     contains = []
@@ -284,7 +287,7 @@ if __name__=="__main__":
   cmdline.add_argument('-ra', '--api-refresh', type=float, default=1000., help="api refresh rate (ms)\n")
   cmdline.add_argument('-rg', '--gui-refresh', type=float, default=1000., help="gui refresh rate (ms)\n")
 
-  cmdline.add_argument('--start-tab', type=int, default=0, help="start with this tab selected\n")
+  cmdline.add_argument('--start-tab', type=int, default=1, help="start with this tab selected\n")
 
   cmdline.add_argument('-u', '--userid', type=str, default="UKLFR", help="start with this userId selected\n")
   cmdline.add_argument('-s', '--sourceid', type=str, help="start with this sourceId selected\n")
@@ -459,7 +462,6 @@ if __name__=="__main__":
   # add plot for monitor overview
   monitor_plotw = pg.PlotWidget(name='monitor_plot')
   monitor_layout.addWidget(monitor_plotw,2,0,1,4)
-  monitor_plot = monitor_plotw.plot()
 
 
 
