@@ -278,6 +278,24 @@ def update_gui():
       for item in monitor_table.findItems(status, QtCore.Qt.MatchExactly):
         item.setBackground(QtGui.QBrush(QtGui.QColor(status_desc[status]["color"])))
 
+    # get selected item and draw line plot
+    sel = monitor_table.selectedItems()
+    if len(sel) > 0:
+      sel_p = monitor_table.item(sel[0].row(), 0).text()
+      sel_s = monitor_table.item(sel[0].row(), 1).text()
+      data = [ d for d in monitor_data if d["patientId"] == sel_p and d["sourceId"] == sel_s ][0]
+      if monitor_sensor_select.value() in data["data_buf"]:
+        data = data["data_buf"][monitor_sensor_select.value()]
+        if monitor_sensor_select.value() == "ACCELEROMETER":
+          monitor_plot_x.setData([ d["sample"]["x"] for d in data ])
+          monitor_plot_y.setData([ d["sample"]["y"] for d in data ])
+          monitor_plot_z.setData([ d["sample"]["z"] for d in data ])
+        else:
+          monitor_plot_x.setData([ d["sample"]["value"] for d in data ])
+          monitor_plot_y.clear()
+          monitor_plot_z.clear()
+
+
 
 
 
@@ -470,7 +488,14 @@ if __name__=="__main__":
 
   # add plot for monitor overview
   monitor_plotw = pg.PlotWidget(name='monitor_plot')
+  monitor_plotw.setRange(xRange=[0,monitor_plot_range])
+  monitor_plotw.setLimits(xMax=100)
   monitor_layout.addWidget(monitor_plotw,2,0,1,4)
+
+  monitor_plot_x = monitor_plotw.plot(pen=(255,0,0), name="x")
+  monitor_plot_y = monitor_plotw.plot(pen=(0,255,0), name="y")
+  monitor_plot_z = monitor_plotw.plot(pen=(0,0,255), name="z")
+
 
 
 
