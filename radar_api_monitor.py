@@ -48,6 +48,9 @@ status_desc = {
                 "N/A": {"priority": -1, "threshold_min": -1, "color": "lightgrey"}
               }
 
+monitor_plot_range = 100
+
+
 def eprint(*args, **kwargs):
   print(*args, file=sys.stderr, **kwargs)
 
@@ -88,9 +91,14 @@ def monitor_callback(response):
       monitor_data[i]["status"] = status
       monitor_data[i]["stamp"] = stamp.replace("T", " ").replace("Z", "")
       monitor_data[i]["diff"] = str(diff).split(".")[0]
+      update_data_buf(monitor_data[i]["data_buf"], response)
       break
 
 
+def update_data_buf(buffer_dict, data):
+  if data["header"]["sensor"] not in buffer_dict:
+    buffer_dict[data["header"]["sensor"]] = collections.deque(maxlen=monitor_plot_range)
+  buffer_dict[data["header"]["sensor"]].append(data["dataset"][0])
 
 
 def api_thread(api_instance):
@@ -161,6 +169,7 @@ def get_subjects_sources_info():
       row["status"] = "N/A"
       row["stamp"] = "-"
       row["diff"] = "-"
+      row["data_buf"] = dict()
       monitor_data.append(row)
 
 
