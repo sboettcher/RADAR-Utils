@@ -48,6 +48,10 @@ status_desc = {
                 "N/A": {"threshold_min": -1, "color": "lightgrey"}
               }
 
+def eprint(*args, **kwargs):
+  print(*args, file=sys.stderr, **kwargs)
+
+
 
 def raw_api_callback(response):
   global running, raw_api_data, monitor_data, subjects, subject_sources, req_conf
@@ -58,10 +62,14 @@ def monitor_callback(response):
   global running, raw_api_data, monitor_data, subjects, subject_sources, req_conf
   if args.verbose and args.verbose > 1: pprint(response)
 
-  patient_id = response["header"]["patientId"]
-  source_id = response["header"]["sourceId"]
-  status = "N/A"
-  stamp = response["header"]["effectiveTimeFrame"]["endDateTime"]
+  try:
+    patient_id = response["header"]["patientId"]
+    source_id = response["header"]["sourceId"]
+    status = "N/A"
+    stamp = response["header"]["effectiveTimeFrame"]["endDateTime"]
+  except TypeError as ex:
+    eprint("WARN: TypeError in monitor_callback:", ex)
+    return
 
   now = datetime.datetime.utcnow()
   stamp_date = datetime.datetime.strptime(stamp, "%Y-%m-%dT%H:%M:%SZ")
@@ -99,7 +107,7 @@ def api_thread(api_instance):
         cb = monitor_callback
         for sub in subject_sources.keys():
           for src in subject_sources[sub]:
-            thread = api_instance.get_last_received_sample_json("ACCELEROMETER", "AVERAGE", "TEN_SECOND", sub, src, callback=cb)
+            thread = api_instance.get_last_received_sample_json(monitor_sensor_select.value(), monitor_stat_select.value(), monitor_interval_select.value(), sub, src, callback=cb)
             time.sleep(0.1)
         continue
       else:
@@ -280,9 +288,9 @@ if __name__=="__main__":
 
   cmdline.add_argument('-u', '--userid', type=str, default="UKLFR", help="start with this userId selected\n")
   cmdline.add_argument('-s', '--sourceid', type=str, help="start with this sourceId selected\n")
-  cmdline.add_argument('--sensor', type=str, help="start with this sensor selected\n", choices=sensors)
-  cmdline.add_argument('--stat', type=str, help="start with this stat selected\n", choices=stats)
-  cmdline.add_argument('--interval', type=str, help="start with this interval selected\n", choices=intervals)
+  cmdline.add_argument('--sensor', type=str, default="ACCELEROMETER", help="start with this sensor selected\n", choices=sensors)
+  cmdline.add_argument('--stat', type=str, default="AVERAGE", help="start with this stat selected\n", choices=stats)
+  cmdline.add_argument('--interval', type=str, default="TEN_SECOND", help="start with this interval selected\n", choices=intervals)
   cmdline.add_argument('-m', '--method', type=str, default="all_sources", help="start with this method selected\n", choices=methods)
 
 
@@ -423,18 +431,42 @@ if __name__=="__main__":
   #monitor_view_all_check.setChecked(True)
   monitor_layout.addWidget(monitor_view_all_check,0,0)
 
+  # add sensor selection field
+  monitor_sensor_select = pg.ComboBox()
+  monitor_sensor_select.addItems(sensors)
+  if args.sensor: monitor_sensor_select.setValue(args.sensor)
+  monitor_layout.addWidget(monitor_sensor_select,0,1)
+
+  # add stat selection field
+  monitor_stat_select = pg.ComboBox()
+  monitor_stat_select.addItems(stats)
+  if args.stat: monitor_stat_select.setValue(args.stat)
+  monitor_layout.addWidget(monitor_stat_select,0,2)
+
+  # add interval selection field
+  monitor_interval_select = pg.ComboBox()
+  monitor_interval_select.addItems(intervals)
+  if args.interval: monitor_interval_select.setValue(args.interval)
+  monitor_interval_select.setEnabled(False)
+  monitor_layout.addWidget(monitor_interval_select,0,3)
+
   # add table for monitor overview
   monitor_table = QtGui.QTableWidget(0,5)
   monitor_table.setHorizontalHeaderLabels(["patientId","sourceId","status","stamp","diff"])
   monitor_table.horizontalHeader().setSectionResizeMode(QtGui.QHeaderView.ResizeToContents)
-  monitor_layout.addWidget(monitor_table,1,0)
+  monitor_layout.addWidget(monitor_table,1,0,1,4)
+
+  # add plot for monitor overview
+  monitor_plotw = pg.PlotWidget(name='monitor_plot')
+  monitor_layout.addWidget(monitor_plotw,2,0,1,4)
+  monitor_plot = monitor_plotw.plot()
 
 
 
   # add main widgets as tabs
   tab_widget.addTab(raw_api_widget, "Raw API")
   tab_widget.addTab(monitor_widget, "Monitor")
-  tab_widget.addTab(graph_widget, "Graph")
+  #tab_widget.addTab(graph_widget, "Graph")
   tab_widget.addTab(devices_widget, "Devices")
 
   tab_widget.setCurrentIndex(args.start_tab)
