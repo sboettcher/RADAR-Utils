@@ -14,12 +14,6 @@ from swagger_client.rest import ApiException
 import urllib3
 urllib3.disable_warnings()
 
-#import matplotlib as mp
-#import matplotlib.pyplot as plt
-#import matplotlib.animation as animation
-#from matplotlib import gridspec
-#mp.style.use("ggplot")
-
 from pyqtgraph.Qt import QtGui, QtCore
 import pyqtgraph as pg
 
@@ -98,6 +92,8 @@ def monitor_callback(response):
 def update_data_buf(buffer_dict, data):
   if data["header"]["sensor"] not in buffer_dict:
     buffer_dict[data["header"]["sensor"]] = collections.deque(maxlen=monitor_plot_range)
+  for i in buffer_dict[data["header"]["sensor"]]:
+    if i["startDateTime"] == data["dataset"][0]["startDateTime"]: return
   buffer_dict[data["header"]["sensor"]].append(data["dataset"][0])
 
 
@@ -490,6 +486,7 @@ if __name__=="__main__":
   monitor_plotw = pg.PlotWidget(name='monitor_plot')
   monitor_plotw.setRange(xRange=[0,monitor_plot_range])
   monitor_plotw.setLimits(xMax=100)
+  monitor_plotw.setLimits(xMin=0)
   monitor_layout.addWidget(monitor_plotw,2,0,1,4)
 
   monitor_plot_x = monitor_plotw.plot(pen=(255,0,0), name="x")
