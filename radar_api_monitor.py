@@ -85,16 +85,18 @@ def monitor_callback(response):
       monitor_data[i]["status"] = status
       monitor_data[i]["stamp"] = stamp.replace("T", " ").replace("Z", "")
       monitor_data[i]["diff"] = str(diff).split(".")[0]
-      update_data_buf(monitor_data[i]["data_buf"], response)
+      update_data_buf(monitor_data[i]["data_buf"], response["header"]["sensor"], response["dataset"][0], maxlen=monitor_plot_range)
       break
 
 
-def update_data_buf(buffer_dict, data):
-  if data["header"]["sensor"] not in buffer_dict:
-    buffer_dict[data["header"]["sensor"]] = collections.deque(maxlen=monitor_plot_range)
-  for i in buffer_dict[data["header"]["sensor"]]:
-    if i["startDateTime"] == data["dataset"][0]["startDateTime"]: return
-  buffer_dict[data["header"]["sensor"]].append(data["dataset"][0])
+# update a dictionary of deque buffers; add empty buffer if key not present, otherwise append
+# check for time stamp before appending to prevent duplicates
+def update_data_buf(buffer_dict, key, data, maxlen=None):
+  if key not in buffer_dict:
+    buffer_dict[key] = collections.deque(maxlen=maxlen)
+  for i in buffer_dict[key]:
+    if i["startDateTime"] == data["startDateTime"]: return
+  buffer_dict[key].append(data)
 
 
 def api_thread(api_instance):
