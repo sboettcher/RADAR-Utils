@@ -76,7 +76,7 @@ def monitor_callback(response):
   for i in range(len(monitor_data)):
     if monitor_data[i]["patientId"] == patient_id and monitor_data[i]["sourceId"] == source_id:
       monitor_data[i]["status"] = status
-      monitor_data[i]["stamp"] = stamp
+      monitor_data[i]["stamp"] = stamp.replace("T", " ").replace("Z", "")
       monitor_data[i]["diff"] = str(diff).split(".")[0]
       break
 
@@ -154,16 +154,19 @@ def get_subjects_sources_info():
 
 
 
-
-def sort_tree_item(treeitem):
+# recursively sorts a qt tree item and its children
+def sort_tree_item(treeitem, recursive=True):
   if treeitem.childCount() == 0: return
   treeitem.sortChildren(0,0)
+  if not recursive: return
   for c in range(treeitem.childCount()):
     sort_tree_item(treeitem.child(c))
 
 
+# checks if the given table contains the data row (as list or OrderedDict),
+# tests if all columns in colcheck are equal
 def table_contains_data(table, data, colcheck=[0]):
-  data = list(data.items())
+  if not isinstance(data, list): data = list(data.items())
   for r in range(table.rowCount()):
     equal = 0
     for c in colcheck:
@@ -171,9 +174,10 @@ def table_contains_data(table, data, colcheck=[0]):
     if equal == len(colcheck): return r
   return -1
 
+# adds a new data row to the given table, or replaces the data if it already exists
 def table_add_data(table, data, colcheck=[0]):
+  if not isinstance(data, list): data = list(data.items())
   row = table_contains_data(table, data, colcheck)
-  data = list(data.items())
   assert table.columnCount() == len(data)
   if row < 0:
     row = table.rowCount()
@@ -184,6 +188,7 @@ def table_add_data(table, data, colcheck=[0]):
     for i in range(table.columnCount()):
       table.item(row,i).setText(data[i][1])
 
+# clears the table of rows, except those with indices in keep
 def table_clear(table, keep):
   for r in [ r for r in reversed(range(table.rowCount())) if r not in keep ]:
     table.removeRow(r)
@@ -413,11 +418,12 @@ if __name__=="__main__":
   # MONITOR TAB
   #
 
-  # add table for monitor overview
+  # add view all checkbox
   monitor_view_all_check = QtGui.QCheckBox("View all sources")
   #monitor_view_all_check.setChecked(True)
   monitor_layout.addWidget(monitor_view_all_check,0,0)
 
+  # add table for monitor overview
   monitor_table = QtGui.QTableWidget(0,5)
   monitor_table.setHorizontalHeaderLabels(["patientId","sourceId","status","stamp","diff"])
   monitor_table.horizontalHeader().setSectionResizeMode(QtGui.QHeaderView.ResizeToContents)
