@@ -209,7 +209,7 @@ def update_gui():
   # monitor tab
   elif (tab_widget.currentIndex() == 1):
     # update monitor table
-    monitor_table.setData(monitor_data)
+    monitor_table.setData([ d for d in monitor_data if monitor_view_all_check.isChecked() or (d["status"]!="DISCONNECTED" and d["status"]!="N/A") ])
     for status in status_desc.keys():
       for item in monitor_table.findItems(status, QtCore.Qt.MatchExactly):
         item.setBackground(QtGui.QBrush(QtGui.QColor(status_desc[status]["color"])))
@@ -282,17 +282,23 @@ if __name__=="__main__":
   tab_widget = QtGui.QTabWidget()
   win.setCentralWidget(tab_widget)
 
+
+  #
+  # TABS
+  #
+
   # create raw api tab
   raw_api_widget = QtGui.QWidget()
   raw_api_layout = QtGui.QGridLayout()
   raw_api_layout.setColumnStretch(1, 1)
   raw_api_widget.setLayout(raw_api_layout)
+  #raw_api_layout.addWidget(QtGui.QLabel("Coming soon..."),0,0)
 
   # create monitor tab
   monitor_widget = QtGui.QWidget()
   monitor_layout = QtGui.QGridLayout()
   monitor_widget.setLayout(monitor_layout)
-  monitor_layout.addWidget(QtGui.QLabel("Coming soon..."),0,0)
+  #monitor_layout.addWidget(QtGui.QLabel("Coming soon..."),0,0)
 
   # create graph tab
   graph_widget = QtGui.QWidget()
@@ -305,6 +311,11 @@ if __name__=="__main__":
   devices_layout = QtGui.QGridLayout()
   devices_widget.setLayout(devices_layout)
   devices_layout.addWidget(QtGui.QLabel("Coming soon..."),0,0)
+
+
+  #
+  # RAW API TAB
+  #
 
   # add subject selection field
   id_select = pg.ComboBox()
@@ -359,9 +370,18 @@ if __name__=="__main__":
   raw_api_layout.addWidget(data_tree,6,0,1,2)
 
 
-  # add data tree for response vis
+  #
+  # MONITOR TAB
+  #
+
+  # add table for monitor overview
+  monitor_view_all_check = QtGui.QCheckBox("View all sources")
+  monitor_layout.addWidget(monitor_view_all_check,0,0)
+
   monitor_table = pg.TableWidget()
-  monitor_layout.addWidget(monitor_table,0,0)
+  monitor_layout.addWidget(monitor_table,1,0)
+
+
 
 
   # add main widgets as tabs
