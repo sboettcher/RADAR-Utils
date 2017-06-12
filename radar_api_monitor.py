@@ -314,6 +314,7 @@ if __name__=="__main__":
   cmdline = argparse.ArgumentParser(description="RADAR-CNS api monitor", formatter_class=Formatter)
 
   # general options
+  cmdline.add_argument('--version', help='print version info and exit\n', action='store_true')
   cmdline.add_argument('-v', '--verbose', help='be verbose\n', action='count')
   cmdline.add_argument('-q', '--quiet', help='be quiet\n', action='store_true')
   cmdline.add_argument('-t', '--title', type=str, default="RADAR-CNS api monitor", help="plot window title\n")
@@ -344,6 +345,10 @@ if __name__=="__main__":
   if args.dev_replace and not args.devices:
     eprint("ERROR: --dev-replace requires --devices!")
     sys.exit(1)
+
+  if args.version:
+    pg.systemInfo()
+    sys.exit(0)
 
   running = False
   raw_api_data = dict()
