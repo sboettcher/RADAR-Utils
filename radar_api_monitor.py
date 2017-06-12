@@ -64,6 +64,7 @@ def monitor_callback(response):
     source_id = response["header"]["sourceId"]
     status = "N/A"
     stamp = response["header"]["effectiveTimeFrame"]["endDateTime"]
+    sample = response["dataset"][0]["sample"]
   except TypeError as ex:
     if args.verbose: eprint("WARN: TypeError in monitor_callback:", ex)
     return
@@ -85,6 +86,10 @@ def monitor_callback(response):
       monitor_data[i]["status"] = status
       monitor_data[i]["stamp"] = stamp.replace("T", " ").replace("Z", "")
       monitor_data[i]["diff"] = str(diff).split(".")[0]
+      if "value" in sample:
+        monitor_data[i]["value"] = str(sample["value"])
+      else:
+        monitor_data[i]["value"] = "x: {:.2} | y: {:.2} | z: {:.2}".format(sample["x"],sample["y"],sample["z"])
       update_data_buf(monitor_data[i]["data_buf"], response["header"]["sensor"], response["dataset"][0], maxlen=monitor_plot_range)
       break
 
@@ -167,6 +172,7 @@ def get_subjects_sources_info():
       row["status"] = "N/A"
       row["stamp"] = "-"
       row["diff"] = "-"
+      row["value"] = "-"
       row["data_buf"] = dict()
       monitor_data.append(row)
 
@@ -479,8 +485,8 @@ if __name__=="__main__":
   monitor_layout.addWidget(monitor_interval_select,0,3)
 
   # add table for monitor overview
-  monitor_table = QtGui.QTableWidget(0,5)
-  monitor_table.setHorizontalHeaderLabels(["patientId","sourceId","status","stamp","diff"])
+  monitor_table = QtGui.QTableWidget(0,6)
+  monitor_table.setHorizontalHeaderLabels(["patientId","sourceId","status","stamp","diff","value"])
   monitor_table.horizontalHeader().setSectionResizeMode(QtGui.QHeaderView.ResizeToContents)
   monitor_layout.addWidget(monitor_table,1,0,1,4)
 
