@@ -7,6 +7,7 @@ import copy
 import math, random
 import numpy as np
 import collections
+import csv
 
 from pprint import pprint
 import swagger_client
@@ -142,7 +143,7 @@ def api_thread(api_instance):
           thread = api_instance.get_last_received_sample_json(req_conf["sensor"], req_conf["stat"], req_conf["interval"], req_conf["subjectId"], req_conf["sourceId"], callback=cb)
 
     except ApiException as e:
-      print("Exception when calling DefaultApi->get_[]: %s\n" % e)
+      eprint("Exception when calling DefaultApi->get_[]: %s\n" % e)
 
 
 def get_subjects_sources_info():
@@ -327,6 +328,8 @@ if __name__=="__main__":
   cmdline.add_argument('--interval', type=str, default="TEN_SECOND", help="start with this interval selected\n", choices=intervals)
   cmdline.add_argument('-m', '--method', type=str, default="all_sources", help="start with this method selected\n", choices=methods)
 
+  cmdline.add_argument('-d', '--devices', type=str, help="csv file fo importing device descriptions.\n")
+
 
   #cmdline.add_argument('--num-samples', '-n', type=int, default=0,     help="plot the last n samples, 0 keeps all\n")
   #cmdline.add_argument('--frame-rate',  '-f', type=float, default=60., help="limit the frame-rate, 0 is unlimited\n")
@@ -339,6 +342,7 @@ if __name__=="__main__":
   subjects = ["UKLFR","LTT_1","LTT_2","LTT_3"]
   subject_sources = dict()
   req_conf = dict()
+  devices = dict()
 
   # create an instance of the API class
   api_instance = swagger_client.DefaultApi()
@@ -386,17 +390,32 @@ if __name__=="__main__":
   monitor_widget.setLayout(monitor_layout)
   #monitor_layout.addWidget(QtGui.QLabel("Coming soon..."),0,0)
 
-  # create graph tab
-  graph_widget = QtGui.QWidget()
-  graph_layout = QtGui.QGridLayout()
-  graph_widget.setLayout(graph_layout)
-  graph_layout.addWidget(QtGui.QLabel("Coming soon..."),0,0)
-
   # create devices tab
   devices_widget = QtGui.QWidget()
   devices_layout = QtGui.QGridLayout()
   devices_widget.setLayout(devices_layout)
-  devices_layout.addWidget(QtGui.QLabel("Coming soon..."),0,0)
+  #devices_layout.addWidget(QtGui.QLabel("Coming soon..."),0,0)
+
+  # load devices if file specified
+  if not args.devices:
+    devices_layout.addWidget(QtGui.QLabel("Import a device csv table via the -d/--devices CLI flag."),0,0)
+  else:
+    try:
+      with open(args.devices, newline='') as csvfile:
+        csvreader = csv.reader(csvfile)
+        header = None
+        for row in csvreader:
+          if not header:
+            header = row
+            devices["header"] = header
+          else:
+            dev = collections.OrderedDict()
+            for h in range(len(header)):
+              dev[header[h]] = row[h]
+            devices[dev["MAC"]] = dev
+    except:
+      eprint("ERROR: Exception while trying to import csv file {}!".format(args.devices))
+      devices_layout.addWidget(QtGui.QLabel("Error while trying to import {}".format(args.devices)),0,0)
 
 
   #
@@ -502,14 +521,28 @@ if __name__=="__main__":
   monitor_plot_z = monitor_plotw.plot(pen=(0,0,255), name="z")
 
 
+  #
+  # DEVICES TAB
+  #
+
+  # add and fill table for devices overview
+  if "header" in devices:
+    devices_table = QtGui.QTableWidget(0,len(devices["header"]))
+    devices_table.setHorizontalHeaderLabels(devices["header"])
+    devices_table.horizontalHeader().setSectionResizeMode(QtGui.QHeaderView.ResizeToContents)
+    devices_layout.addWidget(devices_table,0,0)
+    for dev in [ d for d in devices.keys() if "header" not in d ]:
+      table_add_data(devices_table, devices[dev])
+    devices_table.setSortingEnabled(True)
+    devices_table.sortByColumn(0, QtCore.Qt.AscendingOrder)
+
+
 
 
   # add main widgets as tabs
   tab_widget.addTab(raw_api_widget, "Raw API")
   tab_widget.addTab(monitor_widget, "Monitor")
-  #tab_widget.addTab(graph_widget, "Graph")
   tab_widget.addTab(devices_widget, "Devices")
-
   tab_widget.setCurrentIndex(args.start_tab)
 
 
@@ -533,7 +566,7 @@ if __name__=="__main__":
   try:
     _thread.start_new_thread( api_thread , (api_instance,) )
   except:
-    print ("Error: unable to start thread")
+    eprint ("Error: unable to start thread")
 
   # start gui thread (blocking until window closed)
   app.exec_()
