@@ -63,6 +63,7 @@ def monitor_callback(response):
   try:
     patient_id = response["header"]["patientId"]
     source_id = response["header"]["sourceId"]
+    source_id = source_id if source_id not in devices else devices[source_id][args.dev_replace]
     status = "N/A"
     stamp = response["header"]["effectiveTimeFrame"]["endDateTime"]
     sample = response["dataset"][0]["sample"]
@@ -75,6 +76,8 @@ def monitor_callback(response):
   now = datetime.datetime.utcnow()
   stamp_date = datetime.datetime.strptime(stamp, "%Y-%m-%dT%H:%M:%SZ")
   diff = now - stamp_date
+  if diff < datetime.timedelta():
+    diff = datetime.timedelta()
   #print(now, "->", stamp_date, "|", str(diff).split(".")[0])
 
   for st in sorted(status_desc.items(), key=lambda x: x[1]['threshold_min']):
@@ -160,6 +163,7 @@ def get_subjects_sources_info():
   for sub in sorted(subject_sources.keys()):
     for src in subject_sources[sub]:
       # update monitor sources list
+      src = src if src not in devices else devices[src][args.dev_replace]
       # check if entry already exists, skip if yes
       exists = False
       for i in range(len(monitor_data)):
@@ -329,12 +333,17 @@ if __name__=="__main__":
   cmdline.add_argument('-m', '--method', type=str, default="all_sources", help="start with this method selected\n", choices=methods)
 
   cmdline.add_argument('-d', '--devices', type=str, help="csv file fo importing device descriptions.\n")
+  cmdline.add_argument('--dev-replace', type=str, help="replace device source string (MAC) with the string from this column in the loaded csv.\nMust be unique!\nRequires --devices.\n")
 
 
   #cmdline.add_argument('--num-samples', '-n', type=int, default=0,     help="plot the last n samples, 0 keeps all\n")
   #cmdline.add_argument('--frame-rate',  '-f', type=float, default=60., help="limit the frame-rate, 0 is unlimited\n")
 
   args = cmdline.parse_args()
+
+  if args.dev_replace and not args.devices:
+    eprint("ERROR: --dev-replace requires --devices!")
+    sys.exit(1)
 
   running = False
   raw_api_data = dict()
@@ -346,10 +355,6 @@ if __name__=="__main__":
 
   # create an instance of the API class
   api_instance = swagger_client.DefaultApi()
-
-  # get some api info
-  get_subjects_sources_info()
-
 
 
   # Enable antialiasing for prettier plots
@@ -417,6 +422,9 @@ if __name__=="__main__":
       eprint("ERROR: Exception while trying to import csv file {}!".format(args.devices))
       devices_layout.addWidget(QtGui.QLabel("Error while trying to import {}".format(args.devices)),0,0)
 
+
+  # get some api info
+  get_subjects_sources_info()
 
   #
   # RAW API TAB
