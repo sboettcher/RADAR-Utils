@@ -15,6 +15,7 @@ from swagger_client.rest import ApiException
 import urllib3
 urllib3.disable_warnings()
 
+from pyqtgraph.Qt import VERSION_INFO
 from pyqtgraph.Qt import QtGui, QtCore
 import pyqtgraph as pg
 
@@ -349,6 +350,11 @@ if __name__=="__main__":
   if args.version:
     pg.systemInfo()
     sys.exit(0)
+
+  if "PyQt5" not in VERSION_INFO:
+    eprint("ERROR: requires PyQt5 bindings!")
+    eprint("ERROR: bindings are:", VERSION_INFO)
+    sys.exit(1)
 
   running = False
   raw_api_data = dict()
