@@ -5,6 +5,7 @@ import argparse, json, csv, fileinput
 import copy
 import math, random
 import numpy as np
+import collections
 from pprint import pprint
 
 import matplotlib
@@ -82,10 +83,10 @@ def load(streams):
 
 def parse_json(line, idx, num):
   sample = json.loads(line)
-  if num > 1:
-    datakeys = [ k for k in sample["value"].keys() if "time" not in k ]
-    for k in datakeys:
-      sample["value"]["{0:0{width}d}_{1}".format(idx+1,k, width=len(str(num)))] = sample["value"].pop(k)
+  #if num > 1:
+  #  datakeys = [ k for k in sample["value"].keys() if "time" not in k ]
+  #  for k in datakeys:
+  #    sample["value"]["{0:0{width}d}_{1}".format(idx+1,k, width=len(str(num)))] = sample["value"].pop(k)
   return sample
 
 def parse_csv(header, linesplit, idx, num):
@@ -132,7 +133,7 @@ def data_get_fields(sample):
     return key, stamps, data
 
 
-def graph(args, samples):
+def graph(samples):
     fig = plt.figure(1, figsize=(15,8))
     fig.clf()
     fig.canvas.set_window_title('data')
@@ -182,22 +183,21 @@ def graph(args, samples):
 
     print("[GRAPH] Done.")
 
-    if args.all:
-      print("[GRAPH] Merging available data sources into one line. This is experimental at best...")
-      d_stampdata["all"] = []
-      d_datetimedata["all"] = []
-      d_keydata["all"] = []
+    #if args.all:
+    #  print("[GRAPH] Merging available data sources into one line. This is experimental at best...")
+    #  d_stampdata["all"] = []
+    #  d_datetimedata["all"] = []
+    #  d_keydata["all"] = []
 
-      for k,v in sorted(copy.deepcopy(d_stampdata).items()):
-        d_stampdata["all"].extend(v)
-      for k,v in sorted(copy.deepcopy(d_datetimedata).items()):
-        d_datetimedata["all"].extend(v)
-      for k,v in sorted(copy.deepcopy(d_keydata).items()):
-        d_keydata["all"].extend(v)
+    #  for k,v in sorted(copy.deepcopy(d_stampdata).items()):
+    #    d_stampdata["all"].extend(v)
+    #  for k,v in sorted(copy.deepcopy(d_datetimedata).items()):
+    #    d_datetimedata["all"].extend(v)
+    #  for k,v in sorted(copy.deepcopy(d_keydata).items()):
+    #    d_keydata["all"].extend(v)
 
-      datakeys = ["all"]
+    #  datakeys = ["all"]
 
-    #sys.exit(0)
 
     print("[GRAPH] Drawing {} data line{} ...".format(len(datakeys), 's' if len(datakeys) > 1 else ''))
 
@@ -265,10 +265,39 @@ def graph(args, samples):
     plt.show()
 
 
+def parse_fs_tree(path, tree):
+  listdir = [ path+"/"+p for p in os.listdir(path) ]
+  for p in listdir:
+    if os.path.isdir(p):
+      tree[p] = collections.OrderedDict()
+      parse_fs_tree(p, tree[p])
+    elif os.path.isfile(p):
+      tree[p] = None
+  return tree
 
+def print_fs_tree(tree, level=0):
+  for base in tree.keys():
+    for t in range(level): print("|---", end="")
+    print(os.path.basename(base))
+    if tree[base]:
+      print_fs_tree(tree[base], level+1)
 
+def isel_fs_tree(tree):
+  keylist = list(tree.keys())
+  for i in range(len(keylist)):
+    p = keylist[i]
+    print("{} | {}{}".format(i, "-> " if os.path.isdir(p) else "", os.path.basename(p)))
+  sel = int(input("select: "))
+  if os.path.isdir(keylist[sel]):
+    return isel_fs_tree(tree[keylist[sel]])
+  else:
+    return keylist[sel]
 
-
+def interactive(path):
+  tree = parse_fs_tree(path, collections.OrderedDict())
+  #print_fs_tree(tree)
+  sel = isel_fs_tree(tree)
+  print(sel)
 
 
 if __name__=="__main__":
@@ -280,7 +309,8 @@ if __name__=="__main__":
     cmdline.add_argument('-v', '--verbose', help='be verbose\n', action='count')
     cmdline.add_argument('-u', '--unique', help='only plot unique timestamp data\n', action='store_true')
     cmdline.add_argument('-1', '--single', help='plot into single graph, e.g. for acceleration\n', action='store_true')
-    cmdline.add_argument('-a', '--all', help='merge multiple data sources into one data line\n', action='store_true')
+    #cmdline.add_argument('-a', '--all', help='merge multiple data sources into one data line\n', action='store_true')
+    cmdline.add_argument('-i', '--interactive', type=str, help='interactive mode, reads file structure of provided path and displays options\n')
 
     # timestamp options
     cmdline.add_argument('-s', '--timestamp', metavar='STR', type=str, default="time", choices=stampkeys, help="timestamp to be used.\none of: " + str(stampkeys) + "\n")
@@ -307,6 +337,10 @@ if __name__=="__main__":
     if not args.unique and (args.day or args.begin or args.end):
       sys.stderr.write("[OPT] --day, --begin and --end have no effect if --unique is not specified!\n")
 
+    if args.interactive:
+      interactive(args.interactive)
+      sys.exit(0)
+
     samples = load(args.data)
 
-    graph(args, samples)
+    graph(samples)
