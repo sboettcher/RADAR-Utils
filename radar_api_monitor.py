@@ -64,7 +64,7 @@ def monitor_callback(response):
   try:
     patient_id = response["header"]["patientId"]
     source_id = response["header"]["sourceId"]
-    source_id = source_id if source_id not in devices else devices[source_id][args.dev_replace]
+    source_id = source_id if source_id not in devices or not args.dev_replace else devices[source_id][args.dev_replace]
     status = "N/A"
     stamp = response["header"]["effectiveTimeFrame"]["endDateTime"]
     sample = response["dataset"][0]["sample"]
@@ -91,10 +91,6 @@ def monitor_callback(response):
       monitor_data[i]["status"] = status
       monitor_data[i]["stamp"] = stamp.replace("T", " ").replace("Z", "")
       monitor_data[i]["diff"] = str(diff).split(".")[0]
-      if "value" in sample:
-        monitor_data[i]["value"] = str(sample["value"])
-      else:
-        monitor_data[i]["value"] = "x: {:.2} | y: {:.2} | z: {:.2}".format(sample["x"],sample["y"],sample["z"])
       update_data_buf(monitor_data[i]["data_buf"], response["header"]["sensor"], response["dataset"][0], maxlen=monitor_plot_range)
       break
 
@@ -125,8 +121,10 @@ def api_thread(api_instance):
         cb = monitor_callback
         for sub in subject_sources.keys():
           for src in subject_sources[sub]:
-            thread = api_instance.get_last_received_sample_json(monitor_sensor_select.value(), monitor_stat_select.value(), monitor_interval_select.value(), sub, src, callback=cb)
-            time.sleep(0.1)
+            for s in sensors:
+              thread = api_instance.get_last_received_sample_json(s, monitor_stat_select.value(), monitor_interval_select.value(), sub, src, callback=cb)
+              time.sleep(0.1)
+        if args.api_refresh/1000. < 10: time.sleep(10 - (args.api_refresh/1000.)) #wait at least ten seconds for refresh
         continue
       else:
         continue
@@ -164,7 +162,7 @@ def get_subjects_sources_info():
   for sub in sorted(subject_sources.keys()):
     for src in subject_sources[sub]:
       # update monitor sources list
-      src = src if src not in devices else devices[src][args.dev_replace]
+      src = src if src not in devices or not args.dev_replace else devices[src][args.dev_replace]
       # check if entry already exists, skip if yes
       exists = False
       for i in range(len(monitor_data)):
@@ -178,7 +176,6 @@ def get_subjects_sources_info():
       row["status"] = "N/A"
       row["stamp"] = "-"
       row["diff"] = "-"
-      row["value"] = "-"
       row["data_buf"] = dict()
       monitor_data.append(row)
 
@@ -282,6 +279,12 @@ def update_gui():
 
     # add/replace data
     for d in dataset:
+      if monitor_sensor_select.value() in d["data_buf"]: sample = d["data_buf"][monitor_sensor_select.value()][-1]["sample"]
+      if "value" in sample:
+        d["value"] = str(sample["value"])
+      else:
+        d["value"] = "x: {:.2} | y: {:.2} | z: {:.2}".format(sample["x"],sample["y"],sample["z"])
+      d.move_to_end("data_buf")
       table_add_data(monitor_table, d, [0,1])
 
     for status in status_desc.keys():
@@ -513,6 +516,7 @@ if __name__=="__main__":
   monitor_stat_select = pg.ComboBox()
   monitor_stat_select.addItems(stats)
   if args.stat: monitor_stat_select.setValue(args.stat)
+  monitor_stat_select.setEnabled(False)
   monitor_layout.addWidget(monitor_stat_select,0,2)
 
   # add interval selection field
