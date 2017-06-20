@@ -46,6 +46,8 @@ status_desc = {
 
 monitor_plot_range = 100
 
+timedateformat = "%Y-%m-%d %H:%M:%S UTC "
+
 
 def eprint(*args, **kwargs):
   print(*args, file=sys.stderr, **kwargs)
@@ -223,6 +225,9 @@ def table_clear(table, keep):
 
 def update_gui():
   global running, raw_api_data, monitor_data, subjects, subject_sources, req_conf
+
+  # update timedate label
+  timedate_label.setText(datetime.datetime.utcnow().strftime(timedateformat))
 
   # raw api tab
   if (tab_widget.currentIndex() == 0):
@@ -535,7 +540,7 @@ if __name__=="__main__":
   # add plot for monitor overview
   monitor_plotw = pg.PlotWidget(name='monitor_plot')
   monitor_plotw.setRange(xRange=[0,monitor_plot_range])
-  monitor_plotw.setLimits(xMax=100)
+  monitor_plotw.setLimits(xMax=monitor_plot_range)
   monitor_plotw.setLimits(xMin=0)
   monitor_layout.addWidget(monitor_plotw,2,0,1,4)
 
@@ -567,6 +572,8 @@ if __name__=="__main__":
   tab_widget.addTab(monitor_widget, "Monitor")
   tab_widget.addTab(devices_widget, "Devices")
   tab_widget.setCurrentIndex(args.start_tab)
+  timedate_label = QtGui.QLabel(datetime.datetime.utcnow().strftime(timedateformat))
+  tab_widget.setCornerWidget(timedate_label)
 
 
   # set api request parameters
