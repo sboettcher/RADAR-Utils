@@ -56,6 +56,7 @@ def eprint(*args, **kwargs):
 
 def raw_api_callback(response):
   global running, raw_api_data, monitor_data, subjects, subject_sources, req_conf
+  if args.verbose: print("[RAW] got response.")
   if args.verbose and args.verbose > 1: pprint(response)
   raw_api_data = response
 
@@ -85,7 +86,6 @@ def monitor_callback(response):
   # propagate status
   if sensor in monitor_data[data_idx]["status"]: status = monitor_data[data_idx]["status"][sensor]
 
-
   # update monitor table data
   now = datetime.datetime.utcnow()
   stamp_date = datetime.datetime.strptime(stamp, "%Y-%m-%dT%H:%M:%SZ")
@@ -94,7 +94,6 @@ def monitor_callback(response):
     diff = datetime.timedelta()
 
   # set status
-
   if sensor == "BATTERY":
     bat = response["dataset"][0]["sample"]["value"]
     for st in sorted(status_desc.items(), key=lambda x: x[1]['th_bat']):
@@ -106,9 +105,9 @@ def monitor_callback(response):
       th = st[1]["th_min"]
       if th >= 0 and diff >= datetime.timedelta(minutes=th):
         status = st[0]
-    if "BATTERY" in monitor_data[data_idx]["status"]:
-      batstat = monitor_data[data_idx]["status"]["BATTERY"]
-      if status_desc[batstat]["priority"] > status_desc[status]["priority"]: status = batstat
+    #if "BATTERY" in monitor_data[data_idx]["status"]:
+    #  batstat = monitor_data[data_idx]["status"]["BATTERY"]
+    #  if status_desc[batstat]["priority"] > status_desc[status]["priority"]: status = batstat
 
   if args.verbose: print("[MONITOR] status of {}: {}".format(sensor, status))
 
@@ -145,10 +144,13 @@ def api_thread(api_instance):
         cb = monitor_callback
         for sub in subject_sources.keys():
           for src in subject_sources[sub]:
+            if args.verbose: print("query of {} at {}:".format(src, sub))
             for s in sensors:
               thread = api_instance.get_last_received_sample_json(s, monitor_stat_select.value(), monitor_interval_select.value(), sub, src, callback=cb)
               time.sleep(0.1)
-        if args.api_refresh/1000. < 10: time.sleep(10 - (args.api_refresh/1000.)) #wait at least ten seconds for refresh
+            if args.verbose: print()
+        #if args.api_refresh/1000. < 10: time.sleep(10 - (args.api_refresh/1000.)) #wait at least ten seconds for refresh
+        if args.verbose: print("----------\n")
         continue
       else:
         continue
@@ -198,6 +200,7 @@ def get_subjects_sources_info():
       row["patientId"] = sub
       row["sourceId"] = src
       row["status"] = dict()
+      row["sensor"] = "N/A"
       row["stamp"] = dict()
       row["diff"] = dict()
       row["battery"] = "-"
@@ -226,7 +229,8 @@ def table_contains_data(table, data, colcheck=[0]):
     if equal == len(colcheck): return r
   return -1
 
-# adds a new data row to the given table, or replaces the data if it already exists
+# adds a new data row (list or OrderedDict) to the given table, or replaces the data if it already exists.
+# Possibility to provide a key if an item turns out to be a dict or list
 def table_add_data(table, data, colcheck=[0], key=None):
   if not isinstance(data, list): data = list(data.items())
 
@@ -239,7 +243,7 @@ def table_add_data(table, data, colcheck=[0], key=None):
       table.setItem(row, i, QtGui.QTableWidgetItem())
 
   for i in range(table.columnCount()):
-    if isinstance(data[i][1], dict):
+    if isinstance(data[i][1], dict) or isinstance(data[i][1], list):
       table.item(row,i).setText(data[i][1][key])
     else:
       table.item(row,i).setText(data[i][1])
@@ -302,7 +306,7 @@ def update_gui():
     sensor = monitor_sensor_select.value()
 
     # filter monitor data
-    dataset = [ d for d in monitor_data if monitor_view_all_check.isChecked() or (sensor in d["status"] and status_desc[d["status"][sensor]]["priority"] > 0) ]
+    dataset = [ copy.deepcopy(d) for d in monitor_data if monitor_view_all_check.isChecked() or (sensor in d["status"] and status_desc[d["status"][sensor]]["priority"] > 0) ]
 
     # clear table
     contains = []
@@ -321,6 +325,15 @@ def update_gui():
         else:
           d["value"] = "x: {:.2} | y: {:.2} | z: {:.2}".format(sample["x"],sample["y"],sample["z"])
         d.move_to_end("data_buf")
+
+      # repopulate status and sensor field
+      d["sensor"] = d["status"][sensor]
+      priority_status = "N/A"
+      for k in d["status"].keys():
+        if status_desc[d["status"][k]]["priority"] > status_desc[priority_status]["priority"]:
+          priority_status = d["status"][k]
+      d["status"] = priority_status
+
       # add data
       table_add_data(monitor_table, d, key=sensor, colcheck=[0,1])
 
@@ -564,8 +577,8 @@ if __name__=="__main__":
   monitor_layout.addWidget(monitor_interval_select,0,3)
 
   # add table for monitor overview
-  monitor_table = QtGui.QTableWidget(0,7)
-  monitor_table.setHorizontalHeaderLabels(["patientId","sourceId","status","stamp","diff","battery","value"])
+  monitor_table = QtGui.QTableWidget(0,8)
+  monitor_table.setHorizontalHeaderLabels(["patientId","sourceId","status","sensor","stamp","diff","battery","value"])
   monitor_table.horizontalHeader().setSectionResizeMode(QtGui.QHeaderView.ResizeToContents)
   monitor_layout.addWidget(monitor_table,1,0,1,4)
 
