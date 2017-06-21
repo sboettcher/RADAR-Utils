@@ -93,6 +93,7 @@ def monitor_callback(response):
       monitor_data[i]["status"] = status
       monitor_data[i]["stamp"] = stamp.replace("T", " ").replace("Z", "")
       monitor_data[i]["diff"] = str(diff).split(".")[0]
+      if response["header"]["sensor"] == "BATTERY": monitor_data[i]["battery"] = "{:.2%}".format(response["dataset"][0]["sample"]["value"])
       update_data_buf(monitor_data[i]["data_buf"], response["header"]["sensor"], response["dataset"][0], maxlen=monitor_plot_range)
       break
 
@@ -178,6 +179,7 @@ def get_subjects_sources_info():
       row["status"] = "N/A"
       row["stamp"] = "-"
       row["diff"] = "-"
+      row["battery"] = "-"
       row["data_buf"] = dict()
       monitor_data.append(row)
 
@@ -215,7 +217,7 @@ def table_add_data(table, data, colcheck=[0]):
       table.setItem(row, i, QtGui.QTableWidgetItem(data[i][1]))
   else:
     for i in range(table.columnCount()):
-      table.item(row,i).setText(data[i][1])
+      table.item(row,i).setText(str(data[i][1]))
 
 # clears the table of rows, except those with indices in keep
 def table_clear(table, keep):
@@ -284,12 +286,15 @@ def update_gui():
 
     # add/replace data
     for d in dataset:
-      if monitor_sensor_select.value() in d["data_buf"]: sample = d["data_buf"][monitor_sensor_select.value()][-1]["sample"]
-      if "value" in sample:
-        d["value"] = str(sample["value"])
-      else:
-        d["value"] = "x: {:.2} | y: {:.2} | z: {:.2}".format(sample["x"],sample["y"],sample["z"])
-      d.move_to_end("data_buf")
+      # populate value field
+      if monitor_sensor_select.value() in d["data_buf"]:
+        sample = d["data_buf"][monitor_sensor_select.value()][-1]["sample"]
+        if "value" in sample:
+          d["value"] = str(sample["value"])
+        else:
+          d["value"] = "x: {:.2} | y: {:.2} | z: {:.2}".format(sample["x"],sample["y"],sample["z"])
+        d.move_to_end("data_buf")
+      # add data
       table_add_data(monitor_table, d, [0,1])
 
     for status in status_desc.keys():
@@ -532,8 +537,8 @@ if __name__=="__main__":
   monitor_layout.addWidget(monitor_interval_select,0,3)
 
   # add table for monitor overview
-  monitor_table = QtGui.QTableWidget(0,6)
-  monitor_table.setHorizontalHeaderLabels(["patientId","sourceId","status","stamp","diff","value"])
+  monitor_table = QtGui.QTableWidget(0,7)
+  monitor_table.setHorizontalHeaderLabels(["patientId","sourceId","status","stamp","diff","battery","value"])
   monitor_table.horizontalHeader().setSectionResizeMode(QtGui.QHeaderView.ResizeToContents)
   monitor_layout.addWidget(monitor_table,1,0,1,4)
 
