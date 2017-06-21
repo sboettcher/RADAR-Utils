@@ -36,12 +36,12 @@ methods = [
           ]
 
 status_desc = {
-                "GOOD": {"priority": 1, "threshold_min": 0, "color": "lightgreen"},
-                "OK": {"priority": 2, "threshold_min": 2, "color": "moccasin"},
-                "WARNING": {"priority": 3, "threshold_min": 3, "color": "orange"},
-                "CRITICAL": {"priority": 4, "threshold_min": 5, "color": "red"},
-                "DISCONNECTED": {"priority": 0, "threshold_min": 30, "color": "transparent"},
-                "N/A": {"priority": -1, "threshold_min": -1, "color": "lightgrey"}
+                "GOOD": {"priority": 1, "th_min": 0, "th_bat": 0.25, "color": "lightgreen"},
+                "OK": {"priority": 2, "th_min": 2, "th_bat": 0.10, "color": "moccasin"},
+                "WARNING": {"priority": 3, "th_min": 3, "th_bat": 0.05, "color": "orange"},
+                "CRITICAL": {"priority": 4, "th_min": 5, "th_bat": 0, "color": "red"},
+                "DISCONNECTED": {"priority": 0, "th_min": 30, "th_bat": -1, "color": "transparent"},
+                "N/A": {"priority": -1, "th_min": -1, "th_bat": -1, "color": "lightgrey"}
               }
 
 monitor_plot_range = 100
@@ -67,12 +67,23 @@ def monitor_callback(response):
     patient_id = response["header"]["patientId"]
     source_id = response["header"]["sourceId"]
     source_id = source_id if source_id not in devices or not args.dev_replace else devices[source_id][args.dev_replace]
+    sensor = response["header"]["sensor"]
     status = "N/A"
     stamp = response["header"]["effectiveTimeFrame"]["endDateTime"]
     sample = response["dataset"][0]["sample"]
   except TypeError as ex:
     if args.verbose: eprint("WARN: TypeError in monitor_callback:", ex)
     return
+
+  # find current data index
+  data_idx = 0
+  for i in range(len(monitor_data)):
+    if monitor_data[i]["patientId"] == patient_id and monitor_data[i]["sourceId"] == source_id:
+      data_idx = i
+      break
+
+  # propagate status
+  if sensor in monitor_data[data_idx]["status"]: status = monitor_data[data_idx]["status"][sensor]
 
 
   # update monitor table data
@@ -81,21 +92,31 @@ def monitor_callback(response):
   diff = now - stamp_date
   if diff < datetime.timedelta():
     diff = datetime.timedelta()
-  #print(now, "->", stamp_date, "|", str(diff).split(".")[0])
 
-  for st in sorted(status_desc.items(), key=lambda x: x[1]['threshold_min']):
-    th = st[1]["threshold_min"]
-    if th >= 0 and diff >= datetime.timedelta(minutes=th):
-      status = st[0]
+  # set status
 
-  for i in range(len(monitor_data)):
-    if monitor_data[i]["patientId"] == patient_id and monitor_data[i]["sourceId"] == source_id:
-      monitor_data[i]["status"] = status
-      monitor_data[i]["stamp"] = stamp.replace("T", " ").replace("Z", "")
-      monitor_data[i]["diff"] = str(diff).split(".")[0]
-      if response["header"]["sensor"] == "BATTERY": monitor_data[i]["battery"] = "{:.2%}".format(response["dataset"][0]["sample"]["value"])
-      update_data_buf(monitor_data[i]["data_buf"], response["header"]["sensor"], response["dataset"][0], maxlen=monitor_plot_range)
-      break
+  if sensor == "BATTERY":
+    bat = response["dataset"][0]["sample"]["value"]
+    for st in sorted(status_desc.items(), key=lambda x: x[1]['th_bat']):
+      th = st[1]["th_bat"]
+      if th >= 0 and bat > th:
+        status = st[0]
+  else:
+    for st in sorted(status_desc.items(), key=lambda x: x[1]['th_min']):
+      th = st[1]["th_min"]
+      if th >= 0 and diff >= datetime.timedelta(minutes=th):
+        status = st[0]
+    if "BATTERY" in monitor_data[data_idx]["status"]:
+      batstat = monitor_data[data_idx]["status"]["BATTERY"]
+      if status_desc[batstat]["priority"] > status_desc[status]["priority"]: status = batstat
+
+  if args.verbose: print("[MONITOR] status of {}: {}".format(sensor, status))
+
+  monitor_data[data_idx]["status"][sensor] = status
+  monitor_data[data_idx]["stamp"][sensor] = stamp.replace("T", " ").replace("Z", "")
+  monitor_data[data_idx]["diff"][sensor] = str(diff).split(".")[0]
+  if sensor == "BATTERY": monitor_data[data_idx]["battery"] = "{:.2%}".format(response["dataset"][0]["sample"]["value"])
+  update_data_buf(monitor_data[data_idx]["data_buf"], sensor, response["dataset"][0], maxlen=monitor_plot_range)
 
 
 # update a dictionary of deque buffers; add empty buffer if key not present, otherwise append
@@ -176,9 +197,9 @@ def get_subjects_sources_info():
       row = collections.OrderedDict()
       row["patientId"] = sub
       row["sourceId"] = src
-      row["status"] = "N/A"
-      row["stamp"] = "-"
-      row["diff"] = "-"
+      row["status"] = dict()
+      row["stamp"] = dict()
+      row["diff"] = dict()
       row["battery"] = "-"
       row["data_buf"] = dict()
       monitor_data.append(row)
@@ -206,18 +227,22 @@ def table_contains_data(table, data, colcheck=[0]):
   return -1
 
 # adds a new data row to the given table, or replaces the data if it already exists
-def table_add_data(table, data, colcheck=[0]):
+def table_add_data(table, data, colcheck=[0], key=None):
   if not isinstance(data, list): data = list(data.items())
+
+  # check if row exists, else add one
   row = table_contains_data(table, data, colcheck)
-  #assert table.columnCount() == len(data)
   if row < 0:
     row = table.rowCount()
     table.insertRow(row)
     for i in range(table.columnCount()):
-      table.setItem(row, i, QtGui.QTableWidgetItem(data[i][1]))
-  else:
-    for i in range(table.columnCount()):
-      table.item(row,i).setText(str(data[i][1]))
+      table.setItem(row, i, QtGui.QTableWidgetItem())
+
+  for i in range(table.columnCount()):
+    if isinstance(data[i][1], dict):
+      table.item(row,i).setText(data[i][1][key])
+    else:
+      table.item(row,i).setText(data[i][1])
 
 # clears the table of rows, except those with indices in keep
 def table_clear(table, keep):
@@ -274,8 +299,10 @@ def update_gui():
 
   # monitor tab
   elif (tab_widget.currentIndex() == 1):
+    sensor = monitor_sensor_select.value()
+
     # filter monitor data
-    dataset = [ d for d in monitor_data if monitor_view_all_check.isChecked() or status_desc[d["status"]]["priority"] > 0 ]
+    dataset = [ d for d in monitor_data if monitor_view_all_check.isChecked() or (sensor in d["status"] and status_desc[d["status"][sensor]]["priority"] > 0) ]
 
     # clear table
     contains = []
@@ -287,15 +314,15 @@ def update_gui():
     # add/replace data
     for d in dataset:
       # populate value field
-      if monitor_sensor_select.value() in d["data_buf"]:
-        sample = d["data_buf"][monitor_sensor_select.value()][-1]["sample"]
+      if sensor in d["data_buf"]:
+        sample = d["data_buf"][sensor][-1]["sample"]
         if "value" in sample:
           d["value"] = str(sample["value"])
         else:
           d["value"] = "x: {:.2} | y: {:.2} | z: {:.2}".format(sample["x"],sample["y"],sample["z"])
         d.move_to_end("data_buf")
       # add data
-      table_add_data(monitor_table, d, [0,1])
+      table_add_data(monitor_table, d, key=sensor, colcheck=[0,1])
 
     for status in status_desc.keys():
       for item in monitor_table.findItems(status, QtCore.Qt.MatchExactly):
@@ -307,9 +334,9 @@ def update_gui():
       sel_p = monitor_table.item(sel[0].row(), 0).text()
       sel_s = monitor_table.item(sel[0].row(), 1).text()
       data = [ d for d in monitor_data if d["patientId"] == sel_p and d["sourceId"] == sel_s ][0]
-      if monitor_sensor_select.value() in data["data_buf"]:
-        data = data["data_buf"][monitor_sensor_select.value()]
-        if monitor_sensor_select.value() == "ACCELEROMETER":
+      if sensor in data["data_buf"]:
+        data = data["data_buf"][sensor]
+        if sensor == "ACCELEROMETER":
           monitor_plot_x.setData([ d["sample"]["x"] for d in data ])
           monitor_plot_y.setData([ d["sample"]["y"] for d in data ])
           monitor_plot_z.setData([ d["sample"]["z"] for d in data ])
