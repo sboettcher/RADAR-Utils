@@ -75,7 +75,7 @@ def load(streams):
       if fext == ".json":
         samples.append(parse_json(line, s, len(streams)))
       elif fext == ".csv":
-        if not csv_header: csv_header = line.split(",")
+        if not csv_header: csv_header = line.replace("\"", "").split(",")
         else: samples.append(parse_csv(csv_header, line.split(","), s, len(streams)))
 
   print("[LOAD] Done. Loaded", len(samples), "samples")
