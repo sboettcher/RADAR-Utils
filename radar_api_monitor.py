@@ -156,7 +156,8 @@ def api_thread(api_instance):
         continue
 
       if req_conf["method"] == "all_subjects":
-        thread = api_instance.get_all_subjects_json("0", callback=cb)
+        if req_conf["studyId"]:
+          thread = api_instance.get_all_subjects_json(req_conf["studyId"], callback=cb)
 
       elif req_conf["method"] == "all_sources":
         if req_conf["subjectId"]:
@@ -177,10 +178,10 @@ def api_thread(api_instance):
 def get_subjects_sources_info():
   global running, raw_api_data, monitor_data, subjects, subject_sources, req_conf
   try:
-    #subjects = api_instance.get_all_subjects_json("0")
-    for s in subjects:
-      sources_tmp = api_instance.get_all_sources_json(s)
-      if sources_tmp: subject_sources[s] = [ sid["id"] for sid in sources_tmp["sources"] if sid["type"] == "EMPATICA" ]
+    subjects_tmp = api_instance.get_all_subjects_json(args.studyid)
+    for subject in subjects_tmp["subjects"]:
+      subjects.append(subject["subjectId"])
+      subject_sources[subject["subjectId"]] = [ source["id"] for source in subject["sources"] if source["type"] == "EMPATICA" ]
   except ApiException as e:
     print("Exception when calling DefaultApi->get_all_sources_json[]: %s\n" % e)
 
@@ -278,6 +279,7 @@ def update_gui():
 
     # update config
     req_conf["method"] = method_select.value()
+    req_conf["studyId"] = args.studyid
     req_conf["subjectId"] = id_select.currentText()
     req_conf["sourceId"] = source_select.value()
     req_conf["sensor"] = sensor_select.value()
@@ -380,12 +382,13 @@ if __name__=="__main__":
 
   cmdline.add_argument('--start-tab', type=int, default=1, help="start with this tab selected\n")
 
+  cmdline.add_argument('-s', '--studyid', type=str, default="0", help="start with this studyId selected\n")
   cmdline.add_argument('-u', '--userid', type=str, default="UKLFR", help="start with this userId selected\n")
-  cmdline.add_argument('-s', '--sourceid', type=str, help="start with this sourceId selected\n")
+  cmdline.add_argument('--sourceid', type=str, help="start with this sourceId selected\n")
   cmdline.add_argument('--sensor', type=str, default="ACCELEROMETER", help="start with this sensor selected\n", choices=sensors)
   cmdline.add_argument('--stat', type=str, default="AVERAGE", help="start with this stat selected\n", choices=stats)
   cmdline.add_argument('--interval', type=str, default="TEN_SECOND", help="start with this interval selected\n", choices=intervals)
-  cmdline.add_argument('-m', '--method', type=str, default="all_sources", help="start with this method selected\n", choices=methods)
+  cmdline.add_argument('-m', '--method', type=str, default="all_subjects", help="start with this method selected\n", choices=methods)
 
   cmdline.add_argument('-d', '--devices', type=str, help="csv file fo importing device descriptions.\n")
   cmdline.add_argument('--dev-replace', type=str, help="replace device source string (MAC) with the string from this column in the loaded csv.\nMust be unique!\nRequires --devices.\n")
@@ -412,7 +415,7 @@ if __name__=="__main__":
   running = False
   raw_api_data = dict()
   monitor_data = list()
-  subjects = [args.userid]#["UKLFR","LTT_1","LTT_2","LTT_3"]
+  subjects = list()#["UKLFR","LTT_1","LTT_2","LTT_3"]
   subject_sources = dict()
   req_conf = dict()
   devices = dict()
