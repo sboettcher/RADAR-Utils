@@ -65,7 +65,7 @@ def monitor_callback(response):
   if args.verbose and args.verbose > 1: pprint(response)
 
   try:
-    patient_id = response["header"]["patientId"]
+    patient_id = response["header"]["subjectId"]
     source_id = response["header"]["sourceId"]
     source_id = source_id if source_id not in devices or not args.dev_replace else devices[source_id][args.dev_replace]
     sensor = response["header"]["sensor"]
@@ -79,7 +79,7 @@ def monitor_callback(response):
   # find current data index
   data_idx = 0
   for i in range(len(monitor_data)):
-    if monitor_data[i]["patientId"] == patient_id and monitor_data[i]["sourceId"] == source_id:
+    if monitor_data[i]["subjectId"] == patient_id and monitor_data[i]["sourceId"] == source_id:
       data_idx = i
       break
 
@@ -192,12 +192,12 @@ def get_subjects_sources_info():
       # check if entry already exists, skip if yes
       exists = False
       for i in range(len(monitor_data)):
-        if monitor_data[i]["patientId"] == sub and monitor_data[i]["sourceId"] == src:
+        if monitor_data[i]["subjectId"] == sub and monitor_data[i]["sourceId"] == src:
           exists = True
       if len(monitor_data) > 0 and exists: continue
 
       row = collections.OrderedDict()
-      row["patientId"] = sub
+      row["subjectId"] = sub
       row["sourceId"] = src
       row["status"] = dict()
       row["sensor"] = "N/A"
@@ -346,7 +346,7 @@ def update_gui():
     if len(sel) > 0:
       sel_p = monitor_table.item(sel[0].row(), 0).text()
       sel_s = monitor_table.item(sel[0].row(), 1).text()
-      data = [ d for d in monitor_data if d["patientId"] == sel_p and d["sourceId"] == sel_s ][0]
+      data = [ d for d in monitor_data if d["subjectId"] == sel_p and d["sourceId"] == sel_s ][0]
       if sensor in data["data_buf"]:
         data = data["data_buf"][sensor]
         if sensor == "ACCELEROMETER":
@@ -412,7 +412,7 @@ if __name__=="__main__":
   running = False
   raw_api_data = dict()
   monitor_data = list()
-  subjects = ["UKLFR","LTT_1","LTT_2","LTT_3"]
+  subjects = [args.userid]#["UKLFR","LTT_1","LTT_2","LTT_3"]
   subject_sources = dict()
   req_conf = dict()
   devices = dict()
@@ -498,7 +498,7 @@ if __name__=="__main__":
   id_select = pg.ComboBox()
   id_select.setEditable(True)
   id_select.addItems(subjects)
-  if args.userid and id_select.findText(args.userid) > -1: id_select.setValue(args.userid)
+  if args.userid: id_select.setValue(args.userid)
   raw_api_layout.addWidget(QtGui.QLabel("Patient ID"),0,0)
   raw_api_layout.addWidget(id_select,0,1)
 
@@ -578,7 +578,7 @@ if __name__=="__main__":
 
   # add table for monitor overview
   monitor_table = QtGui.QTableWidget(0,8)
-  monitor_table.setHorizontalHeaderLabels(["patientId","sourceId","status","sensor","stamp","diff","battery","value"])
+  monitor_table.setHorizontalHeaderLabels(["subjectId","sourceId","status","sensor","stamp","diff","battery","value"])
   monitor_table.horizontalHeader().setSectionResizeMode(QtGui.QHeaderView.ResizeToContents)
   monitor_layout.addWidget(monitor_table,1,0,1,4)
 
