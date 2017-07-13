@@ -30,7 +30,9 @@ intervals = ["TEN_SECOND", "THIRTY_SECOND", "ONE_MIN", "TEN_MIN", "ONE_HOUR", "O
 
 methods = [
             "all_subjects",
+            "subject",
             "all_sources",
+            "source_specification",
             "last_computed_source_status",
             "last_received_sample"
           ]
@@ -148,9 +150,17 @@ def raw_api_thread(api_instance):
         if args.studyid:
           thread = api_instance.get_all_subjects_json(args.studyid, callback=cb)
 
+      elif method_select.value() == "subject":
+        if id_select.currentText():
+          thread = api_instance.get_subject_json(id_select.currentText(), callback=cb)
+
       elif method_select.value() == "all_sources":
         if id_select.currentText():
           thread = api_instance.get_all_sources_json(id_select.currentText(), callback=cb)
+
+      elif method_select.value() == "source_specification":
+        if stype_select.value():
+          thread = api_instance.get_source_specification_json(stype_select.value(), callback=cb)
 
       elif method_select.value() == "last_computed_source_status":
         if id_select.currentText() and source_select.value():
@@ -161,7 +171,7 @@ def raw_api_thread(api_instance):
           thread = api_instance.get_last_received_sample_json(sensor_select.value(), stat_select.value(), interval_select.value(), id_select.currentText(), source_select.value(), callback=cb)
 
     except ApiException as e:
-      eprint("Exception when calling DefaultApi->get_[]: %s\n" % e)
+      eprint("Exception when calling DefaultApi->get_%s_json[]: %s\n" % method_select.value(), e)
 
 
 def monitor_api_thread(api_instance):
@@ -295,31 +305,6 @@ def update_gui():
     for i in range(data_tree.topLevelItemCount()):
       sort_tree_item(data_tree.topLevelItem(i))
 
-    # disable widgets according to method
-    if method_select.value() == "all_subjects":
-      id_select.setEnabled(False)
-      source_select.setEnabled(False)
-      sensor_select.setEnabled(False)
-      stat_select.setEnabled(False)
-      interval_select.setEnabled(False)
-    elif method_select.value() == "all_sources":
-      id_select.setEnabled(True)
-      source_select.setEnabled(False)
-      sensor_select.setEnabled(False)
-      stat_select.setEnabled(False)
-      interval_select.setEnabled(False)
-    elif method_select.value() == "last_computed_source_status":
-      id_select.setEnabled(True)
-      source_select.setEnabled(True)
-      sensor_select.setEnabled(False)
-      stat_select.setEnabled(False)
-      interval_select.setEnabled(False)
-    elif method_select.value() == "last_received_sample":
-      id_select.setEnabled(True)
-      source_select.setEnabled(True)
-      sensor_select.setEnabled(True)
-      stat_select.setEnabled(True)
-      interval_select.setEnabled(True)
 
   # monitor tab
   elif (tab_widget.currentIndex() == 1):
@@ -391,14 +376,14 @@ if __name__=="__main__":
   cmdline.add_argument('--version', help='print version info and exit\n', action='store_true')
   cmdline.add_argument('-v', '--verbose', help='be verbose\n', action='count')
   cmdline.add_argument('-q', '--quiet', help='be quiet\n', action='store_true')
-  cmdline.add_argument('-t', '--title', type=str, default="RADAR-CNS api monitor", help="plot window title\n")
+  cmdline.add_argument('--title', type=str, default="RADAR-CNS api monitor", help="plot window title\n")
   cmdline.add_argument('-ic', '--invert-fbg-colors', help="invert fore/background colors\n", action="store_true")
   cmdline.add_argument('-c', '--pen-color', metavar='COLOR', type=str, default="r", help="plot line pen color\n", choices=['b', 'g', 'r', 'c', 'm', 'y', 'k', 'w'])
 
   cmdline.add_argument('-ra', '--api-refresh', type=float, default=1000., help="api refresh rate (ms)\n")
   cmdline.add_argument('-rg', '--gui-refresh', type=float, default=1000., help="gui refresh rate (ms)\n")
 
-  cmdline.add_argument('--start-tab', type=int, default=1, help="start with this tab selected\n")
+  cmdline.add_argument('-t', '--start-tab', type=int, default=1, help="start with this tab selected\n")
 
   cmdline.add_argument('-s', '--studyid', type=str, default="0", help="start with this studyId selected\n")
   cmdline.add_argument('-u', '--userid', type=str, default="UKLFR", help="start with this userId selected\n")
@@ -514,57 +499,90 @@ if __name__=="__main__":
   # RAW API TAB
   #
 
+  # separator
+  def separator():
+    sep = QtGui.QFrame()
+    sep.setFrameShape(QtGui.QFrame.HLine)
+    sep.setFrameShadow(QtGui.QFrame.Sunken)
+    raw_api_layout.addWidget(sep,grid_idx,0,1,2)
+
+  grid_idx = 0
+
   # add subject selection field
   id_select = pg.ComboBox()
-  id_select.setEditable(False)
+  id_select.setEditable(True)
   id_select.addItems(subjects)
   if args.userid: id_select.setValue(args.userid)
-  raw_api_layout.addWidget(QtGui.QLabel("Patient ID"),0,0)
-  raw_api_layout.addWidget(id_select,0,1)
+  raw_api_layout.addWidget(QtGui.QLabel("Patient ID"),grid_idx,0)
+  raw_api_layout.addWidget(id_select,grid_idx,1)
 
+  grid_idx+=1
   # add source selection field
   source_select = pg.ComboBox()
   if args.userid in subject_sources:
     source_select.addItems(subject_sources[args.userid])
   if args.sourceid and source_select.findText(args.sourceid) > -1: source_select.setValue(args.sourceid)
-  source_select.setEnabled(False)
-  raw_api_layout.addWidget(QtGui.QLabel("Device ID"),1,0)
-  raw_api_layout.addWidget(source_select,1,1)
+  source_select.setEnabled(True)
+  raw_api_layout.addWidget(QtGui.QLabel("Device ID"),grid_idx,0)
+  raw_api_layout.addWidget(source_select,grid_idx,1)
 
+  grid_idx+=1
+  separator()
+
+  grid_idx+=1
   # add sensor selection field
   sensor_select = pg.ComboBox()
   sensor_select.addItems(sensors)
   if args.sensor: sensor_select.setValue(args.sensor)
-  sensor_select.setEnabled(False)
-  raw_api_layout.addWidget(QtGui.QLabel("Sensor"),2,0)
-  raw_api_layout.addWidget(sensor_select,2,1)
+  sensor_select.setEnabled(True)
+  raw_api_layout.addWidget(QtGui.QLabel("Sensor"),grid_idx,0)
+  raw_api_layout.addWidget(sensor_select,grid_idx,1)
 
+  grid_idx+=1
   # add stat selection field
   stat_select = pg.ComboBox()
   stat_select.addItems(stats)
   if args.stat: stat_select.setValue(args.stat)
-  stat_select.setEnabled(False)
-  raw_api_layout.addWidget(QtGui.QLabel("Stat"),3,0)
-  raw_api_layout.addWidget(stat_select,3,1)
+  stat_select.setEnabled(True)
+  raw_api_layout.addWidget(QtGui.QLabel("Stat"),grid_idx,0)
+  raw_api_layout.addWidget(stat_select,grid_idx,1)
 
+  grid_idx+=1
   # add interval selection field
   interval_select = pg.ComboBox()
   interval_select.addItems(intervals)
   if args.interval: interval_select.setValue(args.interval)
-  interval_select.setEnabled(False)
-  raw_api_layout.addWidget(QtGui.QLabel("Interval"),4,0)
-  raw_api_layout.addWidget(interval_select,4,1)
+  interval_select.setEnabled(True)
+  raw_api_layout.addWidget(QtGui.QLabel("Interval"),grid_idx,0)
+  raw_api_layout.addWidget(interval_select,grid_idx,1)
 
+  grid_idx+=1
+  separator()
+
+  grid_idx+=1
+  # add source type selection field
+  stype_select = pg.ComboBox()
+  stype_select.addItems(sourceTypes)
+  stype_select.setValue("EMPATICA")
+  stype_select.setEnabled(True)
+  raw_api_layout.addWidget(QtGui.QLabel("Source Type"),grid_idx,0)
+  raw_api_layout.addWidget(stype_select,grid_idx,1)
+
+  grid_idx+=1
+  separator()
+
+  grid_idx+=1
   # add method selection field
   method_select = pg.ComboBox()
   method_select.addItems(methods)
   if args.method: method_select.setValue(args.method)
-  raw_api_layout.addWidget(QtGui.QLabel("Method"),5,0)
-  raw_api_layout.addWidget(method_select,5,1)
+  raw_api_layout.addWidget(QtGui.QLabel("Method"),grid_idx,0)
+  raw_api_layout.addWidget(method_select,grid_idx,1)
 
+  grid_idx+=1
   # add data tree for response vis
   data_tree = pg.DataTreeWidget()
-  raw_api_layout.addWidget(data_tree,6,0,1,2)
+  raw_api_layout.addWidget(data_tree,grid_idx,0,1,2)
 
 
   #
