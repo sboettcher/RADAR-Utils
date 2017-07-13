@@ -21,7 +21,7 @@ import pyqtgraph as pg
 
 import _thread
 
-global running, raw_api_data, monitor_data, subjects, subject_sources, req_conf
+global running, raw_api_data, monitor_data, subjects, subject_sources
 
 sourceTypes = ["ANDROID", "EMPATICA", "PEBBLE", "BIOVOTION"]
 sensors = ["ACCELEROMETER", "BATTERY", "BLOOD_VOLUME_PULSE", "ELECTRODERMAL_ACTIVITY", "INTER_BEAT_INTERVAL", "HEART_RATE", "THERMOMETER"]
@@ -55,13 +55,13 @@ def eprint(*args, **kwargs):
 
 
 def raw_api_callback(response):
-  global running, raw_api_data, monitor_data, subjects, subject_sources, req_conf
+  global running, raw_api_data, monitor_data, subjects, subject_sources
   if args.verbose: print("[RAW] got response.")
   if args.verbose and args.verbose > 1: pprint(response)
   raw_api_data = response
 
 def monitor_callback(response):
-  global running, raw_api_data, monitor_data, subjects, subject_sources, req_conf
+  global running, raw_api_data, monitor_data, subjects, subject_sources
   if args.verbose and args.verbose > 1: pprint(response)
 
   try:
@@ -128,55 +128,73 @@ def update_data_buf(buffer_dict, key, data, maxlen=None):
   buffer_dict[key].append(data)
 
 
-def api_thread(api_instance):
-  global running, raw_api_data, monitor_data, subjects, subject_sources, req_conf
 
-  monitor_index = 0
+
+def raw_api_thread(api_instance):
+  global running, raw_api_data, monitor_data, subjects, subject_sources
+
   while(running):
     time.sleep(args.api_refresh/1000.)
+    if (tab_widget.currentIndex() != 0):
+      continue
+
     # always get list of subjects and sources first, everything else depends on this
     get_subjects_sources_info()
 
     try:
-      if (tab_widget.currentIndex() == 0):
-        cb = raw_api_callback
-      elif (tab_widget.currentIndex() == 1):
-        cb = monitor_callback
-        for sub in subject_sources.keys():
-          for src in subject_sources[sub]:
-            if args.verbose: print("query of {} at {}:".format(src, sub))
-            for s in sensors:
-              thread = api_instance.get_last_received_sample_json(s, monitor_stat_select.value(), monitor_interval_select.value(), sub, src, callback=cb)
-              time.sleep(0.1)
-            if args.verbose: print()
-        #if args.api_refresh/1000. < 10: time.sleep(10 - (args.api_refresh/1000.)) #wait at least ten seconds for refresh
-        if args.verbose: print("----------\n")
-        continue
-      else:
-        continue
+      cb = raw_api_callback
 
-      if req_conf["method"] == "all_subjects":
-        if req_conf["studyId"]:
-          thread = api_instance.get_all_subjects_json(req_conf["studyId"], callback=cb)
+      if method_select.value() == "all_subjects":
+        if args.studyid:
+          thread = api_instance.get_all_subjects_json(args.studyid, callback=cb)
 
-      elif req_conf["method"] == "all_sources":
-        if req_conf["subjectId"]:
-          thread = api_instance.get_all_sources_json(req_conf["subjectId"], callback=cb)
+      elif method_select.value() == "all_sources":
+        if id_select.currentText():
+          thread = api_instance.get_all_sources_json(id_select.currentText(), callback=cb)
 
-      elif req_conf["method"] == "last_computed_source_status":
-        if req_conf["subjectId"] and req_conf["sourceId"]:
-          thread = api_instance.get_last_computed_source_status_json(req_conf["subjectId"], req_conf["sourceId"], callback=cb)
+      elif method_select.value() == "last_computed_source_status":
+        if id_select.currentText() and source_select.value():
+          thread = api_instance.get_last_computed_source_status_json(id_select.currentText(), source_select.value(), callback=cb)
 
-      elif req_conf["method"] == "last_received_sample":
-        if req_conf["subjectId"] and req_conf["sourceId"] and req_conf["sensor"] and req_conf["stat"] and req_conf["interval"]:
-          thread = api_instance.get_last_received_sample_json(req_conf["sensor"], req_conf["stat"], req_conf["interval"], req_conf["subjectId"], req_conf["sourceId"], callback=cb)
+      elif method_select.value() == "last_received_sample":
+        if id_select.currentText() and source_select.value() and sensor_select.value() and stat_select.value() and interval_select.value():
+          thread = api_instance.get_last_received_sample_json(sensor_select.value(), stat_select.value(), interval_select.value(), id_select.currentText(), source_select.value(), callback=cb)
 
     except ApiException as e:
       eprint("Exception when calling DefaultApi->get_[]: %s\n" % e)
 
 
+def monitor_api_thread(api_instance):
+  global running, raw_api_data, monitor_data, subjects, subject_sources
+
+  while(running):
+    time.sleep(args.api_refresh/1000.)
+    if (tab_widget.currentIndex() != 1):
+      continue
+
+    # always get list of subjects and sources first, everything else depends on this
+    get_subjects_sources_info()
+
+    try:
+      cb = monitor_callback
+      for sub in subject_sources.keys():
+        for src in subject_sources[sub]:
+          if args.verbose: print("query of {} at {}:".format(src, sub))
+          for s in sensors:
+            thread = api_instance.get_last_received_sample_json(s, monitor_stat_select.value(), monitor_interval_select.value(), sub, src, callback=cb)
+            time.sleep(0.1)
+          if args.verbose: print()
+      #if args.api_refresh/1000. < 10: time.sleep(10 - (args.api_refresh/1000.)) #wait at least ten seconds for refresh
+      if args.verbose: print("----------\n")
+
+    except ApiException as e:
+      eprint("Exception when calling DefaultApi->get_last_received_sample_json[]: %s\n" % e)
+
+
+
+
 def get_subjects_sources_info():
-  global running, raw_api_data, monitor_data, subjects, subject_sources, req_conf
+  global running, raw_api_data, monitor_data, subjects, subject_sources
   try:
     subjects_tmp = api_instance.get_all_subjects_json(args.studyid)
     for subject in subjects_tmp["subjects"]:
@@ -256,7 +274,7 @@ def table_clear(table, keep):
 
 
 def update_gui():
-  global running, raw_api_data, monitor_data, subjects, subject_sources, req_conf
+  global running, raw_api_data, monitor_data, subjects, subject_sources
 
   # update timedate label
   timedate_label.setText(datetime.datetime.utcnow().strftime(timedateformat))
@@ -264,7 +282,7 @@ def update_gui():
   # raw api tab
   if (tab_widget.currentIndex() == 0):
     # check for updated subjectId
-    if req_conf["subjectId"] != id_select.currentText() and len(id_select.currentText()) > 0:
+    if id_select.currentText() != id_select.currentText() and len(id_select.currentText()) > 0:
       source_select.clear()
       if id_select.currentText() in subject_sources:
         source_select.addItems(subject_sources[id_select.currentText()])
@@ -277,27 +295,27 @@ def update_gui():
     for i in range(data_tree.topLevelItemCount()):
       sort_tree_item(data_tree.topLevelItem(i))
 
-    # update config
-    req_conf["method"] = method_select.value()
-    req_conf["studyId"] = args.studyid
-    req_conf["subjectId"] = id_select.currentText()
-    req_conf["sourceId"] = source_select.value()
-    req_conf["sensor"] = sensor_select.value()
-    req_conf["stat"] = stat_select.value()
-    req_conf["interval"] = interval_select.value()
-
     # disable widgets according to method
-    if req_conf["method"] == "all_sources":
+    if method_select.value() == "all_subjects":
+      id_select.setEnabled(False)
       source_select.setEnabled(False)
       sensor_select.setEnabled(False)
       stat_select.setEnabled(False)
       interval_select.setEnabled(False)
-    elif req_conf["method"] == "last_computed_source_status":
+    elif method_select.value() == "all_sources":
+      id_select.setEnabled(True)
+      source_select.setEnabled(False)
+      sensor_select.setEnabled(False)
+      stat_select.setEnabled(False)
+      interval_select.setEnabled(False)
+    elif method_select.value() == "last_computed_source_status":
+      id_select.setEnabled(True)
       source_select.setEnabled(True)
       sensor_select.setEnabled(False)
       stat_select.setEnabled(False)
       interval_select.setEnabled(False)
-    elif req_conf["method"] == "last_received_sample":
+    elif method_select.value() == "last_received_sample":
+      id_select.setEnabled(True)
       source_select.setEnabled(True)
       sensor_select.setEnabled(True)
       stat_select.setEnabled(True)
@@ -365,7 +383,7 @@ def update_gui():
 
 
 if __name__=="__main__":
-  global running, raw_api_data, monitor_data, subjects, subject_sources, req_conf
+  global running, raw_api_data, monitor_data, subjects, subject_sources
   class Formatter(argparse.ArgumentDefaultsHelpFormatter, argparse.RawTextHelpFormatter): pass
   cmdline = argparse.ArgumentParser(description="RADAR-CNS api monitor", formatter_class=Formatter)
 
@@ -415,9 +433,8 @@ if __name__=="__main__":
   running = False
   raw_api_data = dict()
   monitor_data = list()
-  subjects = list()#["UKLFR","LTT_1","LTT_2","LTT_3"]
+  subjects = list()
   subject_sources = dict()
-  req_conf = dict()
   devices = dict()
 
   # create an instance of the API class
@@ -499,7 +516,7 @@ if __name__=="__main__":
 
   # add subject selection field
   id_select = pg.ComboBox()
-  id_select.setEditable(True)
+  id_select.setEditable(False)
   id_select.addItems(subjects)
   if args.userid: id_select.setValue(args.userid)
   raw_api_layout.addWidget(QtGui.QLabel("Patient ID"),0,0)
@@ -623,15 +640,6 @@ if __name__=="__main__":
   timedate_label = QtGui.QLabel(datetime.datetime.utcnow().strftime(timedateformat))
   tab_widget.setCornerWidget(timedate_label)
 
-
-  # set api request parameters
-  req_conf["method"] = method_select.value()
-  req_conf["subjectId"] = id_select.currentText()
-  req_conf["sourceId"] = source_select.value()
-  req_conf["sensor"] = sensor_select.value()
-  req_conf["stat"] = stat_select.value()
-  req_conf["interval"] = interval_select.value()
-
   # connect update and start timer
   timer = QtCore.QTimer()
   timer.timeout.connect(update_gui)
@@ -642,7 +650,8 @@ if __name__=="__main__":
 
   # start api thread
   try:
-    _thread.start_new_thread( api_thread , (api_instance,) )
+    _thread.start_new_thread( raw_api_thread , (api_instance,) )
+    _thread.start_new_thread( monitor_api_thread , (api_instance,) )
   except:
     eprint ("Error: unable to start thread")
 
