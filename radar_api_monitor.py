@@ -47,7 +47,7 @@ status_desc = {
                 "N/A": {"priority": -1, "th_min": -1, "th_bat": -1, "color": "lightgrey"}
               }
 
-monitor_plot_range = 100
+max_data_buf = 8192
 
 timedateformat = "%Y-%m-%d %H:%M:%S UTC "
 
@@ -73,8 +73,9 @@ def monitor_callback(response):
     source_id = source_id if source_id not in devices or not args.dev_replace else devices[source_id][args.dev_replace]
     sensor = response["header"]["sensor"]
     status = "N/A"
-    stamp = response["header"]["effectiveTimeFrame"]["endDateTime"]
-    sample = response["dataset"][0]["sample"]
+    samples = response["dataset"]
+    last_sample = samples[len(samples)-1]
+    last_stamp = last_sample["startDateTime"]
   except TypeError as ex:
     if args.verbose: eprint("WARN: TypeError in monitor_callback:", ex)
     return
@@ -91,14 +92,14 @@ def monitor_callback(response):
 
   # update monitor table data
   now = datetime.datetime.utcnow()
-  stamp_date = datetime.datetime.strptime(stamp, "%Y-%m-%dT%H:%M:%SZ")
+  stamp_date = datetime.datetime.strptime(last_stamp, "%Y-%m-%dT%H:%M:%SZ")
   diff = now - stamp_date
   if diff < datetime.timedelta():
     diff = datetime.timedelta()
 
   # set status
   if sensor == "BATTERY":
-    bat = response["dataset"][0]["sample"]["value"]
+    bat = last_sample["sample"]["value"]
     for st in sorted(status_desc.items(), key=lambda x: x[1]['th_bat']):
       th = st[1]["th_bat"]
       if th >= 0 and bat > th:
@@ -112,13 +113,14 @@ def monitor_callback(response):
     #  batstat = monitor_data[data_idx]["status"]["BATTERY"]
     #  if status_desc[batstat]["priority"] > status_desc[status]["priority"]: status = batstat
 
-  if args.verbose: print("[MONITOR] status of {}: {}".format(sensor, status))
+  if args.verbose: print("[MONITOR] status of {} @ {}/{}: {}".format(sensor, patient_id, source_id, status))
 
   monitor_data[data_idx]["status"][sensor] = status
-  monitor_data[data_idx]["stamp"][sensor] = stamp.replace("T", " ").replace("Z", "")
+  monitor_data[data_idx]["stamp"][sensor] = last_stamp.replace("T", " ").replace("Z", "")
   monitor_data[data_idx]["diff"][sensor] = str(diff).split(".")[0]
-  if sensor == "BATTERY": monitor_data[data_idx]["battery"] = "{:.2%}".format(response["dataset"][0]["sample"]["value"])
-  update_data_buf(monitor_data[data_idx]["data_buf"], sensor, response["dataset"][0], maxlen=monitor_plot_range)
+  if sensor == "BATTERY": monitor_data[data_idx]["battery"] = "{:.2%}".format(last_sample["sample"]["value"])
+
+  replace_data_buf(monitor_data[data_idx]["data_buf"], sensor, samples, maxlen=max_data_buf)
 
 
 # update a dictionary of deque buffers; add empty buffer if key not present, otherwise append
@@ -129,6 +131,13 @@ def update_data_buf(buffer_dict, key, data, maxlen=None):
   for i in buffer_dict[key]:
     if i["startDateTime"] == data["startDateTime"]: return
   buffer_dict[key].append(data)
+
+# replace a dictionary of deque buffers; add empty buffer if key not present, otherwise clear and extend
+def replace_data_buf(buffer_dict, key, data, maxlen=None):
+  if key not in buffer_dict:
+    buffer_dict[key] = collections.deque(maxlen=maxlen)
+  else: buffer_dict[key].clear()
+  buffer_dict[key].extend(data)
 
 
 
@@ -196,7 +205,7 @@ def monitor_api_thread(api_instance):
         for src in subject_sources[sub]:
           if args.verbose: print("query of {} at {}:".format(src, sub))
           for s in sensors:
-            thread = api_instance.get_last_received_sample_json(s, monitor_stat_select.value(), monitor_interval_select.value(), sub, src, callback=cb)
+            thread = api_instance.get_samples_json(s, monitor_stat_select.value(), monitor_interval_select.value(), sub, src, callback=cb)
             time.sleep(0.1)
           if args.verbose: print()
       #if args.api_refresh/1000. < 10: time.sleep(10 - (args.api_refresh/1000.)) #wait at least ten seconds for refresh
@@ -354,11 +363,12 @@ def update_gui():
     # get selected item and draw line plot
     sel = monitor_table.selectedItems()
     if len(sel) > 0:
-      sel_p = monitor_table.item(sel[0].row(), 0).text()
-      sel_s = monitor_table.item(sel[0].row(), 1).text()
-      data = [ d for d in monitor_data if d["subjectId"] == sel_p and d["sourceId"] == sel_s ][0]
+      sel_sub = monitor_table.item(sel[0].row(), 0).text()
+      sel_src = monitor_table.item(sel[0].row(), 1).text()
+      data = [ d for d in monitor_data if d["subjectId"] == sel_sub and d["sourceId"] == sel_src ][0]
       if sensor in data["data_buf"]:
         data = data["data_buf"][sensor]
+        monitor_plotw.setRange(xRange=[0,len(data)])
         if sensor == "ACCELEROMETER":
           monitor_plot_x.setData([ d["sample"]["x"] for d in data ])
           monitor_plot_y.setData([ d["sample"]["y"] for d in data ])
@@ -627,8 +637,8 @@ if __name__=="__main__":
 
   # add plot for monitor overview
   monitor_plotw = pg.PlotWidget(name='monitor_plot')
-  monitor_plotw.setRange(xRange=[0,monitor_plot_range])
-  monitor_plotw.setLimits(xMax=monitor_plot_range)
+  monitor_plotw.setRange(xRange=[0,10])
+  monitor_plotw.setLimits(xMax=max_data_buf)
   monitor_plotw.setLimits(xMin=0)
   monitor_layout.addWidget(monitor_plotw,2,0,1,4)
 
