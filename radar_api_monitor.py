@@ -34,6 +34,7 @@ methods = [
             "all_sources",
             "source_specification",
             "last_computed_source_status",
+            "samples",
             "last_received_sample"
           ]
 
@@ -165,6 +166,10 @@ def raw_api_thread(api_instance):
       elif method_select.value() == "last_computed_source_status":
         if id_select.currentText() and source_select.value():
           thread = api_instance.get_last_computed_source_status_json(id_select.currentText(), source_select.value(), callback=cb)
+
+      elif method_select.value() == "samples":
+        if id_select.currentText() and source_select.value() and sensor_select.value() and stat_select.value() and interval_select.value():
+          thread = api_instance.get_samples_json(sensor_select.value(), stat_select.value(), interval_select.value(), id_select.currentText(), source_select.value(), callback=cb)
 
       elif method_select.value() == "last_received_sample":
         if id_select.currentText() and source_select.value() and sensor_select.value() and stat_select.value() and interval_select.value():
