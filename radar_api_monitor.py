@@ -208,7 +208,7 @@ def get_subjects_sources_info():
   try:
     subjects_tmp = api_instance.get_all_subjects_json(args.studyid)
     for subject in subjects_tmp["subjects"]:
-      subjects.append(subject["subjectId"])
+      if subject["subjectId"] not in subjects: subjects.append(subject["subjectId"])
       subject_sources[subject["subjectId"]] = [ source["id"] for source in subject["sources"] if source["type"] == "EMPATICA" ]
   except ApiException as e:
     print("Exception when calling DefaultApi->get_all_sources_json[]: %s\n" % e)
@@ -291,13 +291,13 @@ def update_gui():
 
   # raw api tab
   if (tab_widget.currentIndex() == 0):
-    # check for updated subjectId
-    if id_select.currentText() != id_select.currentText() and len(id_select.currentText()) > 0:
-      source_select.clear()
-      if id_select.currentText() in subject_sources:
-        source_select.addItems(subject_sources[id_select.currentText()])
-        if id_select.currentText() not in subject_sources or len(subject_sources[id_select.currentText()]) == 0: id_select.lineEdit().setStyleSheet("background-color: rgb(255, 0, 0);")
-      else: id_select.lineEdit().setStyleSheet("background-color: rgb(255, 255, 255);")
+    # update id and source fields
+    id_select.clear()
+    source_select.clear()
+    id_select.addItems(subjects)
+    if id_select.currentText() in subject_sources:
+      source_select.addItems(subject_sources[id_select.currentText()])
+
 
     # update data tree
     data_tree.setData(raw_api_data)
@@ -510,9 +510,9 @@ if __name__=="__main__":
 
   # add subject selection field
   id_select = pg.ComboBox()
-  id_select.setEditable(True)
+  id_select.setEditable(False)
   id_select.addItems(subjects)
-  if args.userid: id_select.setValue(args.userid)
+  if args.userid and args.userid in subjects: id_select.setValue(args.userid)
   raw_api_layout.addWidget(QtGui.QLabel("Patient ID"),grid_idx,0)
   raw_api_layout.addWidget(id_select,grid_idx,1)
 
