@@ -24,9 +24,7 @@ from DateAxisItem import *
 
 import threading
 import logging
-logging.basicConfig(level=logging.DEBUG,
-                    format='[%(levelname)-8s][%(asctime)-23s] (%(threadName)-12s) %(message)s'
-                    )
+logging_levels = ["CRITICAL", "ERROR", "WARNING", "INFO", "DEBUG"]
 
 global running, raw_api_data, monitor_data, subjects, subject_sources
 
@@ -70,7 +68,7 @@ def eprint(*args, **kwargs):
 
 def raw_api_callback(response):
   global running, raw_api_data, monitor_data, subjects, subject_sources
-  if args.verbose: logging.info("[RAW] got response.")
+  if args.verbose: logging.debug("[RAW] got response.")
   if args.verbose and args.verbose > 1: pprint(response)
   raw_api_data = response
 
@@ -124,7 +122,7 @@ def monitor_callback(response):
     #  batstat = monitor_data[data_idx]["status"]["BATTERY"]
     #  if status_desc[batstat]["priority"] > status_desc[status]["priority"]: status = batstat
 
-  if args.verbose: logging.info("[MONITOR] status of {} @ {}/{}: {}".format(sensor, patient_id, source_id, status))
+  if args.verbose: logging.debug("[MONITOR] status of {} @ {}/{}: {}".format(sensor, patient_id, source_id, status))
 
   monitor_data[data_idx]["status"][sensor] = status
   monitor_data[data_idx]["stamp"][sensor] = last_stamp.replace("T", " ").replace("Z", "")
@@ -214,13 +212,12 @@ def monitor_api_thread(api_instance):
       cb = monitor_callback
       for sub in subject_sources.keys():
         for src in subject_sources[sub]:
-          if args.verbose: logging.info("query of {} at {}:".format(src, sub))
+          if args.verbose: logging.debug("query of {} at {}:".format(src, sub))
           for s in sensors:
             thread = api_instance.get_samples_json(s, monitor_stat_select.value(), monitor_interval_select.value(), sub, src, callback=cb)
             time.sleep(0.1)
-          #if args.verbose: logging.info()
       #if args.api_refresh/1000. < 10: time.sleep(10 - (args.api_refresh/1000.)) #wait at least ten seconds for refresh
-      if args.verbose: logging.info("----------\n")
+      if args.verbose: logging.debug("----------\n")
 
     except ApiException as e:
       logging.error("Exception when calling DefaultApi->get_last_received_sample_json[]: %s\n" % e)
@@ -409,34 +406,41 @@ if __name__=="__main__":
   cmdline = argparse.ArgumentParser(description="RADAR-CNS api monitor", formatter_class=Formatter)
 
   # general options
-  cmdline.add_argument('--version', help='print version info and exit\n', action='store_true')
+  cmdline.add_argument('-V', '--version', help='print version info and exit\n', action='store_true')
   cmdline.add_argument('-v', '--verbose', help='be verbose\n', action='count')
-  cmdline.add_argument('-q', '--quiet', help='be quiet\n', action='store_true')
-  cmdline.add_argument('--title', type=str, default="RADAR-CNS api monitor", help="plot window title\n")
-  cmdline.add_argument('-ic', '--invert-fbg-colors', help="invert fore/background colors\n", action="store_true")
-  cmdline.add_argument('-c', '--pen-color', metavar='COLOR', type=str, default="r", help="plot line pen color\n", choices=['b', 'g', 'r', 'c', 'm', 'y', 'k', 'w'])
+  #cmdline.add_argument('-q', '--quiet', help='be quiet\n', action='store_true')
+  cmdline.add_argument('-l', '--logging', metavar="LVL", type=str, default="DEBUG", help='set logging level\n', choices=logging_levels)
 
-  cmdline.add_argument('-ra', '--api-refresh', type=float, default=1000., help="api refresh rate (ms)\n")
-  cmdline.add_argument('-rg', '--gui-refresh', type=float, default=1000., help="gui refresh rate (ms)\n")
+  cmdline.add_argument('-ra', '--api-refresh', metavar="MS", type=float, default=1000., help="api refresh rate (ms)\n")
 
-  cmdline.add_argument('-t', '--start-tab', type=int, default=1, help="start with this tab selected\n")
+  cmdline_gui_group = cmdline.add_argument_group('GUI arguments')
+  cmdline_gui_group.add_argument('--title', type=str, default="RADAR-CNS api monitor", help="window title\n")
+  cmdline_gui_group.add_argument('--invert-fbg-colors', help="invert fore/background colors\n", action="store_true")
+  cmdline_gui_group.add_argument('-rg', '--gui-refresh', metavar="MS", type=float, default=1000., help="gui refresh rate (ms)\n")
 
-  cmdline.add_argument('-s', '--studyid', type=str, default="0", help="start with this studyId selected\n")
-  cmdline.add_argument('-u', '--userid', type=str, default="UKLFR", help="start with this userId selected\n")
-  cmdline.add_argument('--sourceid', type=str, help="start with this sourceId selected\n")
-  cmdline.add_argument('--sensor', type=str, default="ACCELEROMETER", help="start with this sensor selected\n", choices=sensors)
-  cmdline.add_argument('--stat', type=str, default="AVERAGE", help="start with this stat selected\n", choices=stats)
-  cmdline.add_argument('--interval', type=str, default="TEN_SECOND", help="start with this interval selected\n", choices=intervals)
-  cmdline.add_argument('-m', '--method', type=str, default="all_subjects", help="start with this method selected\n", choices=methods)
+  cmdline_devices_group = cmdline.add_argument_group('device manipulation arguments')
+  cmdline_devices_group.add_argument('-d', '--devices', type=str, help="csv file for importing device descriptions.\n")
+  cmdline_devices_group.add_argument('--dev-replace', type=str, help="replace device source string (MAC) with the string from this column in the loaded csv.\nMust be unique!\nRequires --devices.\n")
 
-  cmdline.add_argument('-d', '--devices', type=str, help="csv file fo importing device descriptions.\n")
-  cmdline.add_argument('--dev-replace', type=str, help="replace device source string (MAC) with the string from this column in the loaded csv.\nMust be unique!\nRequires --devices.\n")
+  cmdline_defaults_group = cmdline.add_argument_group('default selections')
+  cmdline_defaults_group.add_argument('-t', '--start-tab', type=int, default=1, help="start with this tab selected\n")
+  cmdline_defaults_group.add_argument('--studyid', type=str, default="0", help="start with this studyId selected\n")
+  cmdline_defaults_group.add_argument('-u', '--userid', type=str, default="UKLFR", help="start with this userId selected\n")
+  cmdline_defaults_group.add_argument('-s', '--sourceid', type=str, help="start with this sourceId selected\n")
+  cmdline_defaults_group.add_argument('--sensor', type=str, default="ACCELEROMETER", help="start with this sensor selected\n", choices=sensors)
+  cmdline_defaults_group.add_argument('--stat', type=str, default="AVERAGE", help="start with this stat selected\n", choices=stats)
+  cmdline_defaults_group.add_argument('--interval', type=str, default="TEN_SECOND", help="start with this interval selected\n", choices=intervals)
+  cmdline_defaults_group.add_argument('--method', type=str, default="all_subjects", help="start with this method selected\n", choices=methods)
 
 
   #cmdline.add_argument('--num-samples', '-n', type=int, default=0,     help="plot the last n samples, 0 keeps all\n")
   #cmdline.add_argument('--frame-rate',  '-f', type=float, default=60., help="limit the frame-rate, 0 is unlimited\n")
 
   args = cmdline.parse_args()
+
+  logging.basicConfig(level=args.logging,
+                      format='[%(levelname)-8s][%(asctime)-23s] (%(threadName)-12s) %(message)s'
+                      )
 
   if args.dev_replace and not args.devices:
     logging.error("--dev-replace requires --devices!")
