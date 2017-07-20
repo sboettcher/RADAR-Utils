@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 
-import sys, os, time, datetime
+import sys, os
+import time, datetime
+import traceback
 import argparse, json, fileinput
 from inspect import isclass
 import copy
@@ -19,7 +21,11 @@ from pyqtgraph.Qt import VERSION_INFO
 from pyqtgraph.Qt import QtGui, QtCore
 import pyqtgraph as pg
 
-import _thread
+import threading
+import logging
+logging.basicConfig(level=logging.DEBUG,
+                    format='[%(levelname)-8s][%(asctime)-23s] (%(threadName)-12s) %(message)s'
+                    )
 
 global running, raw_api_data, monitor_data, subjects, subject_sources
 
@@ -59,7 +65,7 @@ def eprint(*args, **kwargs):
 
 def raw_api_callback(response):
   global running, raw_api_data, monitor_data, subjects, subject_sources
-  if args.verbose: print("[RAW] got response.")
+  if args.verbose: logging.info("[RAW] got response.")
   if args.verbose and args.verbose > 1: pprint(response)
   raw_api_data = response
 
@@ -77,7 +83,7 @@ def monitor_callback(response):
     last_sample = samples[len(samples)-1]
     last_stamp = last_sample["startDateTime"]
   except TypeError as ex:
-    if args.verbose: eprint("WARN: TypeError in monitor_callback:", ex)
+    if args.verbose: logging.warn("[MONITOR] TypeError in monitor_callback: " + ex)
     return
 
   # find current data index
@@ -113,7 +119,7 @@ def monitor_callback(response):
     #  batstat = monitor_data[data_idx]["status"]["BATTERY"]
     #  if status_desc[batstat]["priority"] > status_desc[status]["priority"]: status = batstat
 
-  if args.verbose: print("[MONITOR] status of {} @ {}/{}: {}".format(sensor, patient_id, source_id, status))
+  if args.verbose: logging.info("[MONITOR] status of {} @ {}/{}: {}".format(sensor, patient_id, source_id, status))
 
   monitor_data[data_idx]["status"][sensor] = status
   monitor_data[data_idx]["stamp"][sensor] = last_stamp.replace("T", " ").replace("Z", "")
@@ -185,7 +191,7 @@ def raw_api_thread(api_instance):
           thread = api_instance.get_last_received_sample_json(sensor_select.value(), stat_select.value(), interval_select.value(), id_select.currentText(), source_select.value(), callback=cb)
 
     except ApiException as e:
-      eprint("Exception when calling DefaultApi->get_%s_json[]: %s\n" % method_select.value(), e)
+      logging.error("Exception when calling DefaultApi->get_%s_json[]: %s\n" % method_select.value(), e)
 
 
 def monitor_api_thread(api_instance):
@@ -203,16 +209,16 @@ def monitor_api_thread(api_instance):
       cb = monitor_callback
       for sub in subject_sources.keys():
         for src in subject_sources[sub]:
-          if args.verbose: print("query of {} at {}:".format(src, sub))
+          if args.verbose: logging.info("query of {} at {}:".format(src, sub))
           for s in sensors:
             thread = api_instance.get_samples_json(s, monitor_stat_select.value(), monitor_interval_select.value(), sub, src, callback=cb)
             time.sleep(0.1)
-          if args.verbose: print()
+          #if args.verbose: logging.info()
       #if args.api_refresh/1000. < 10: time.sleep(10 - (args.api_refresh/1000.)) #wait at least ten seconds for refresh
-      if args.verbose: print("----------\n")
+      if args.verbose: logging.info("----------\n")
 
     except ApiException as e:
-      eprint("Exception when calling DefaultApi->get_last_received_sample_json[]: %s\n" % e)
+      logging.error("Exception when calling DefaultApi->get_last_received_sample_json[]: %s\n" % e)
 
 
 
@@ -225,7 +231,7 @@ def get_subjects_sources_info():
       if subject["subjectId"] not in subjects: subjects.append(subject["subjectId"])
       subject_sources[subject["subjectId"]] = [ source["id"] for source in subject["sources"] if source["type"] == "EMPATICA" ]
   except ApiException as e:
-    print("Exception when calling DefaultApi->get_all_sources_json[]: %s\n" % e)
+    logging.error("Exception when calling DefaultApi->get_all_sources_json[]: %s\n" % e)
 
   # update monitor data
   for sub in sorted(subject_sources.keys()):
@@ -292,7 +298,7 @@ def table_add_data(table, data, colcheck=[0], key=None):
       table.item(row,i).setText(data[i][1])
 
 # clears the table of rows, except those with indices in keep
-def table_clear(table, keep):
+def table_clear(table, keep=[]):
   for r in [ r for r in reversed(range(table.rowCount())) if r not in keep ]:
     table.removeRow(r)
 
@@ -418,7 +424,7 @@ if __name__=="__main__":
   args = cmdline.parse_args()
 
   if args.dev_replace and not args.devices:
-    eprint("ERROR: --dev-replace requires --devices!")
+    logging.error("--dev-replace requires --devices!")
     sys.exit(1)
 
   if args.version:
@@ -426,8 +432,8 @@ if __name__=="__main__":
     sys.exit(0)
 
   if "PyQt5" not in VERSION_INFO:
-    eprint("ERROR: requires PyQt5 bindings!")
-    eprint("ERROR: bindings are:", VERSION_INFO)
+    logging.error("requires PyQt5 bindings!")
+    logging.error("bindings are: " + VERSION_INFO)
     sys.exit(1)
 
   running = False
@@ -504,8 +510,8 @@ if __name__=="__main__":
               dev[header[h]] = row[h]
             devices[dev["MAC"]] = dev
     except:
-      eprint("ERROR: Exception while trying to import csv file {}!".format(args.devices))
-      devices_layout.addWidget(QtGui.QLabel("Error while trying to import {}".format(args.devices)),0,0)
+      logging.error("Exception while trying to import csv file {}!".format(args.devices))
+      devices_layout.addWidget(QtGui.QLabel("Exception while trying to import {}".format(args.devices)),0,0)
 
 
   # get some api info
@@ -642,7 +648,8 @@ if __name__=="__main__":
   monitor_layout.addWidget(monitor_update_check,2,0)
 
   # add plot for monitor overview
-  monitor_plotw = pg.PlotWidget(name='monitor_plot')
+  #date_axis = pg.graphicsItems.DateAxisItem.DateAxisItem(orientation='bottom')
+  monitor_plotw = pg.PlotWidget(name='monitor_plot')#, axisItems={'bottom':date_axis})
   monitor_plotw.setRange(xRange=[0,10])
   monitor_plotw.setLimits(xMax=max_data_buf)
   monitor_plotw.setLimits(xMin=0)
@@ -687,16 +694,26 @@ if __name__=="__main__":
 
   running = True
 
-  # start api thread
+  # start threads
+  threads = []
   try:
-    _thread.start_new_thread( raw_api_thread , (api_instance,) )
-    _thread.start_new_thread( monitor_api_thread , (api_instance,) )
+    threads.append(threading.Thread( target=raw_api_thread, args=(api_instance,), name="raw_api" ))
+    threads.append(threading.Thread( target=monitor_api_thread, args=(api_instance,), name="monitor_api" ))
+    for t in threads:
+      logging.info("starting thread " + t.getName())
+      t.start()
   except:
-    eprint ("Error: unable to start thread")
+    logging.error("unable to start thread")
+    traceback.print_exc(file=sys.stderr)
 
   # start gui thread (blocking until window closed)
   app.exec_()
 
   running = False
 
-  print("DONE")
+  # join threads
+  for t in threads:
+    logging.info("joining thread " + t.getName())
+    t.join()
+
+  logging.info("DONE")
