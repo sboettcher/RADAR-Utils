@@ -20,6 +20,7 @@ urllib3.disable_warnings()
 from pyqtgraph.Qt import VERSION_INFO
 from pyqtgraph.Qt import QtGui, QtCore
 import pyqtgraph as pg
+from DateAxisItem import *
 
 import threading
 import logging
@@ -33,6 +34,9 @@ sourceTypes = ["ANDROID", "EMPATICA", "PEBBLE", "BIOVOTION"]
 sensors = ["ACCELEROMETER", "BATTERY", "BLOOD_VOLUME_PULSE", "ELECTRODERMAL_ACTIVITY", "INTER_BEAT_INTERVAL", "HEART_RATE", "THERMOMETER"]
 stats = ["AVERAGE", "COUNT", "MAXIMUM", "MEDIAN", "MINIMUM", "SUM", "INTERQUARTILE_RANGE", "LOWER_QUARTILE", "UPPER_QUARTILE", "QUARTILES", "RECEIVED_MESSAGES"]
 intervals = ["TEN_SECOND", "THIRTY_SECOND", "ONE_MIN", "TEN_MIN", "ONE_HOUR", "ONE_DAY", "ONE_WEEK"]
+
+zoom_intervals = intervals + ["ONE_MONTH", "ALL"]
+intervals_to_sec = {"ALL": -1, "TEN_SECOND": 10, "THIRTY_SECOND": 30, "ONE_MIN": 60, "TEN_MIN": 600, "ONE_HOUR": 3600, "ONE_DAY": 86400, "ONE_WEEK": 604800, "ONE_MONTH": 2592000}
 
 methods = [
             "all_subjects",
@@ -56,6 +60,7 @@ status_desc = {
 max_data_buf = 8192
 
 timedateformat = "%Y-%m-%d %H:%M:%S UTC "
+datastampformat = "%Y-%m-%dT%H:%M:%SZ"
 
 
 def eprint(*args, **kwargs):
@@ -98,7 +103,7 @@ def monitor_callback(response):
 
   # update monitor table data
   now = datetime.datetime.utcnow()
-  stamp_date = datetime.datetime.strptime(last_stamp, "%Y-%m-%dT%H:%M:%SZ")
+  stamp_date = datetime.datetime.strptime(last_stamp, datastampformat)
   diff = now - stamp_date
   if diff < datetime.timedelta():
     diff = datetime.timedelta()
@@ -373,14 +378,24 @@ def update_gui():
       sel_src = monitor_table.item(sel[0].row(), 1).text()
       data = [ d for d in monitor_data if d["subjectId"] == sel_sub and d["sourceId"] == sel_src ][0]
       if sensor in data["data_buf"]:
+        # data samples to be plotted (y-axis)
         data = data["data_buf"][sensor]
-        monitor_plotw.setRange(xRange=[0,len(data)])
-        if sensor == "ACCELEROMETER":
-          monitor_plot_x.setData([ d["sample"]["x"] for d in data ])
-          monitor_plot_y.setData([ d["sample"]["y"] for d in data ])
-          monitor_plot_z.setData([ d["sample"]["z"] for d in data ])
+        # unix time stamps from the data samples (x-axis)
+        stamps = [ datetime.datetime.strptime(d["startDateTime"], datastampformat).timestamp() for d in data ]
+
+        # set plot x-axis range according to zoom level
+        if monitor_zoom_select.value() != "ALL":
+          monitor_plotw.setRange(xRange=[ int(time.time()-intervals_to_sec[monitor_zoom_select.value()]), int(time.time()) ])
         else:
-          monitor_plot_x.setData([ d["sample"]["value"] for d in data ])
+          monitor_plotw.setRange(xRange=[ int(stamps[0]), int(stamps[-1]) ])
+
+        # plot data, distinguish accelerometer (multi line) and others (single line)
+        if sensor == "ACCELEROMETER":
+          monitor_plot_x.setData(x=stamps, y=[ d["sample"]["x"] for d in data ])
+          monitor_plot_y.setData(x=stamps, y=[ d["sample"]["y"] for d in data ])
+          monitor_plot_z.setData(x=stamps, y=[ d["sample"]["z"] for d in data ])
+        else:
+          monitor_plot_x.setData(x=stamps, y=[ d["sample"]["value"] for d in data ])
           monitor_plot_y.clear()
           monitor_plot_z.clear()
 
@@ -613,7 +628,7 @@ if __name__=="__main__":
 
   # add view all checkbox
   monitor_view_all_check = QtGui.QCheckBox("View all sources")
-  #monitor_view_all_check.setChecked(True)
+  monitor_view_all_check.setChecked(True)
   monitor_layout.addWidget(monitor_view_all_check,0,0)
 
   # add sensor selection field
@@ -647,11 +662,17 @@ if __name__=="__main__":
   monitor_update_check.setChecked(True)
   monitor_layout.addWidget(monitor_update_check,2,0)
 
+  # add zoom selection field
+  monitor_zoom_select = pg.ComboBox()
+  monitor_zoom_select.addItems(zoom_intervals)
+  monitor_zoom_select.setValue(zoom_intervals[-1])
+  monitor_layout.addWidget(monitor_zoom_select,2,3)
+
   # add plot for monitor overview
-  #date_axis = pg.graphicsItems.DateAxisItem.DateAxisItem(orientation='bottom')
-  monitor_plotw = pg.PlotWidget(name='monitor_plot')#, axisItems={'bottom':date_axis})
-  monitor_plotw.setRange(xRange=[0,10])
-  monitor_plotw.setLimits(xMax=max_data_buf)
+  date_axis = DateAxisItem(orientation='bottom')
+  monitor_plotw = pg.PlotWidget(name='monitor_plot', axisItems={'bottom':date_axis})
+  monitor_plotw.setRange(xRange=[ int(time.time()-intervals_to_sec[monitor_zoom_select.value()]), int(time.time()) ])
+  #monitor_plotw.setLimits(xMax=max_data_buf)
   monitor_plotw.setLimits(xMin=0)
   monitor_layout.addWidget(monitor_plotw,3,0,1,4)
 
