@@ -287,7 +287,7 @@ def table_add_data(table, data, colcheck=[0], key=None):
 
   for i in range(table.columnCount()):
     if isinstance(data[i][1], dict) or isinstance(data[i][1], list):
-      table.item(row,i).setText(data[i][1][key])
+      if key in data[i][1]: table.item(row,i).setText(data[i][1][key])
     else:
       table.item(row,i).setText(data[i][1])
 
@@ -301,7 +301,7 @@ def update_gui():
   global running, raw_api_data, monitor_data, subjects, subject_sources
 
   # update timedate label
-  timedate_label.setText(datetime.datetime.utcnow().strftime(timedateformat))
+  timedate_label.setText(api_config.host + " | " + datetime.datetime.utcnow().strftime(timedateformat))
 
   # raw api tab
   if (tab_widget.currentIndex() == 0):
@@ -321,7 +321,7 @@ def update_gui():
 
 
   # monitor tab
-  elif (tab_widget.currentIndex() == 1):
+  elif (tab_widget.currentIndex() == 1 and monitor_update_check.isChecked()):
     sensor = monitor_sensor_select.value()
 
     # filter monitor data
@@ -346,7 +346,7 @@ def update_gui():
         d.move_to_end("data_buf")
 
       # repopulate status and sensor field
-      d["sensor"] = d["status"][sensor]
+      if sensor in d["status"]: d["sensor"] = d["status"][sensor]
       priority_status = "N/A"
       for k in d["status"].keys():
         if status_desc[d["status"][k]]["priority"] > status_desc[priority_status]["priority"]:
@@ -439,6 +439,7 @@ if __name__=="__main__":
 
   # create an instance of the API class
   api_instance = swagger_client.DefaultApi()
+  api_config = swagger_client.Configuration()
 
 
   # Enable antialiasing for prettier plots
@@ -456,7 +457,7 @@ if __name__=="__main__":
   app = QtGui.QApplication([])
   win = QtGui.QMainWindow()
   win.setWindowTitle(args.title)
-  win.resize(900,900)
+  win.resize(1100,900)
 
   tab_widget = QtGui.QTabWidget()
   win.setCentralWidget(tab_widget)
@@ -635,12 +636,17 @@ if __name__=="__main__":
   monitor_table.horizontalHeader().setSectionResizeMode(QtGui.QHeaderView.ResizeToContents)
   monitor_layout.addWidget(monitor_table,1,0,1,4)
 
+  # add graph update checkbox
+  monitor_update_check = QtGui.QCheckBox("Update graph")
+  monitor_update_check.setChecked(True)
+  monitor_layout.addWidget(monitor_update_check,2,0)
+
   # add plot for monitor overview
   monitor_plotw = pg.PlotWidget(name='monitor_plot')
   monitor_plotw.setRange(xRange=[0,10])
   monitor_plotw.setLimits(xMax=max_data_buf)
   monitor_plotw.setLimits(xMin=0)
-  monitor_layout.addWidget(monitor_plotw,2,0,1,4)
+  monitor_layout.addWidget(monitor_plotw,3,0,1,4)
 
   monitor_plot_x = monitor_plotw.plot(pen=(255,0,0), name="x")
   monitor_plot_y = monitor_plotw.plot(pen=(0,255,0), name="y")
@@ -670,7 +676,7 @@ if __name__=="__main__":
   tab_widget.addTab(monitor_widget, "Monitor")
   tab_widget.addTab(devices_widget, "Devices")
   tab_widget.setCurrentIndex(args.start_tab)
-  timedate_label = QtGui.QLabel(datetime.datetime.utcnow().strftime(timedateformat))
+  timedate_label = QtGui.QLabel(api_config.host + " | " + datetime.datetime.utcnow().strftime(timedateformat))
   tab_widget.setCornerWidget(timedate_label)
 
   # connect update and start timer
