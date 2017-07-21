@@ -59,6 +59,7 @@ max_data_buf = 8192
 
 timedateformat = "%Y-%m-%d %H:%M:%S UTC "
 datastampformat = "%Y-%m-%dT%H:%M:%SZ"
+utcOffset = time.timezone - (time.daylight * 3600)
 
 
 def eprint(*args, **kwargs):
@@ -378,7 +379,7 @@ def update_gui():
         # data samples to be plotted (y-axis)
         data = data["data_buf"][sensor]
         # unix time stamps from the data samples (x-axis)
-        stamps = [ datetime.datetime.strptime(d["startDateTime"], datastampformat).timestamp() for d in data ]
+        stamps = [ datetime.datetime.strptime(d["startDateTime"], datastampformat).timestamp() - utcOffset for d in data ]
 
         # set plot x-axis range according to zoom level
         if monitor_zoom_select.value() != "ALL":
@@ -417,6 +418,7 @@ if __name__=="__main__":
   cmdline_gui_group.add_argument('--title', type=str, default="RADAR-CNS api monitor", help="window title\n")
   cmdline_gui_group.add_argument('--invert-fbg-colors', help="invert fore/background colors\n", action="store_true")
   cmdline_gui_group.add_argument('-rg', '--gui-refresh', metavar="MS", type=float, default=1000., help="gui refresh rate (ms)\n")
+  cmdline_gui_group.add_argument('--maximized', help="start window maximized\n", action="store_true")
 
   cmdline_devices_group = cmdline.add_argument_group('device manipulation arguments')
   cmdline_devices_group.add_argument('-d', '--devices', type=str, help="csv file for importing device descriptions.\n")
@@ -483,6 +485,7 @@ if __name__=="__main__":
   win = QtGui.QMainWindow()
   win.setWindowTitle(args.title)
   win.resize(1100,900)
+  if args.maximized: win.setWindowState(QtCore.Qt.WindowMaximized)
 
   tab_widget = QtGui.QTabWidget()
   win.setCentralWidget(tab_widget)
@@ -632,7 +635,7 @@ if __name__=="__main__":
 
   # add view all checkbox
   monitor_view_all_check = QtGui.QCheckBox("View all sources")
-  monitor_view_all_check.setChecked(True)
+  #monitor_view_all_check.setChecked(True)
   monitor_layout.addWidget(monitor_view_all_check,0,0)
 
   # add sensor selection field
