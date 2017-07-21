@@ -21,11 +21,3 @@ As far as I can tell there is currently an issue in the swagger generation, to f
 ```
 sed -ie "/return_data\ =\ None/s/None/self.deserialize\(response_data,\"object\"\)/" swagger_client/api_client.py
 ```
-
-## radar_data_viz.py
-Tool for visualizing raw data extracted/restructured from the HDFS ([Restructure-HDFS-topic/dev](https://github.com/RADAR-CNS/Restructure-HDFS-topic/tree/dev)).
-### Dependencies:
-```
-pip3 install numpy matplotlib
-```
-
