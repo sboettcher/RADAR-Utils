@@ -90,6 +90,8 @@ def monitor_callback(response):
     if args.verbose: logging.warn("[MONITOR] TypeError in monitor_callback: " + ex)
     return
 
+  monitor_data_rlock.acquire()
+
   # find current data index
   data_idx = 0
   for i in range(len(monitor_data)):
@@ -131,6 +133,8 @@ def monitor_callback(response):
   if sensor == "BATTERY": monitor_data[data_idx]["battery"] = "{:.2%}".format(last_sample["sample"]["value"])
 
   replace_data_buf(monitor_data[data_idx]["data_buf"], sensor, samples, maxlen=max_data_buf)
+
+  monitor_data_rlock.release()
 
 
 # update a dictionary of deque buffers; add empty buffer if key not present, otherwise append
@@ -237,6 +241,7 @@ def get_subjects_sources_info():
     logging.error("Exception when calling DefaultApi->get_all_sources_json[]: %s\n" % e)
 
   # update monitor data
+  monitor_data_rlock.acquire()
   for sub in sorted(subject_sources.keys()):
     for src in subject_sources[sub]:
       # update monitor sources list
@@ -258,6 +263,7 @@ def get_subjects_sources_info():
       row["battery"] = "-"
       row["data_buf"] = dict()
       monitor_data.append(row)
+  monitor_data_rlock.release()
 
 
 
@@ -334,7 +340,9 @@ def update_gui():
     sensor = monitor_sensor_select.value()
 
     # filter monitor data
+    monitor_data_rlock.acquire()
     dataset = [ copy.deepcopy(d) for d in monitor_data if monitor_view_all_check.isChecked() or (sensor in d["status"] and status_desc[d["status"][sensor]]["priority"] > 0) ]
+    monitor_data_rlock.release()
 
     # clear table
     contains = []
@@ -374,7 +382,7 @@ def update_gui():
     if len(sel) > 0:
       sel_sub = monitor_table.item(sel[0].row(), 0).text()
       sel_src = monitor_table.item(sel[0].row(), 1).text()
-      data = [ d for d in monitor_data if d["subjectId"] == sel_sub and d["sourceId"] == sel_src ][0]
+      data = [ d for d in dataset if d["subjectId"] == sel_sub and d["sourceId"] == sel_src ][0]
       if sensor in data["data_buf"]:
         # data samples to be plotted (y-axis)
         data = data["data_buf"][sensor]
@@ -433,6 +441,7 @@ if __name__=="__main__":
   cmdline_defaults_group.add_argument('--stat', type=str, default="AVERAGE", help="start with this stat selected\n", choices=stats)
   cmdline_defaults_group.add_argument('--interval', type=str, default="TEN_SECOND", help="start with this interval selected\n", choices=intervals)
   cmdline_defaults_group.add_argument('--method', type=str, default="all_subjects", help="start with this method selected\n", choices=methods)
+  cmdline_defaults_group.add_argument('--zoom', type=str, default="ONE_HOUR", help="start with this monitor graph zoom level selected\n", choices=zoom_intervals)
 
 
   #cmdline.add_argument('--num-samples', '-n', type=int, default=0,     help="plot the last n samples, 0 keeps all\n")
@@ -468,6 +477,7 @@ if __name__=="__main__":
   api_instance = swagger_client.DefaultApi()
   api_config = swagger_client.Configuration()
 
+  monitor_data_rlock = threading.RLock()
 
   # Enable antialiasing for prettier plots
   pg.setConfigOptions(antialias=True)
@@ -648,7 +658,7 @@ if __name__=="__main__":
   monitor_stat_select = pg.ComboBox()
   monitor_stat_select.addItems(stats)
   if args.stat: monitor_stat_select.setValue(args.stat)
-  monitor_stat_select.setEnabled(False)
+  #monitor_stat_select.setEnabled(False)
   monitor_layout.addWidget(monitor_stat_select,0,2)
 
   # add interval selection field
@@ -672,7 +682,8 @@ if __name__=="__main__":
   # add zoom selection field
   monitor_zoom_select = pg.ComboBox()
   monitor_zoom_select.addItems(zoom_intervals)
-  monitor_zoom_select.setValue(zoom_intervals[-1])
+  if args.zoom: monitor_zoom_select.setValue(args.zoom)
+  else: monitor_zoom_select.setValue(zoom_intervals[-1])
   monitor_layout.addWidget(monitor_zoom_select,2,3)
 
   # add plot for monitor overview
