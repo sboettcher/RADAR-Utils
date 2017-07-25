@@ -2,22 +2,26 @@
 Some smaller utilities for the RADAR-CNS project
 
 ## radar_api_monitor.py
-A small python GUI tool for interfacing with the REST API @ [RADAR-RestApi/dev](https://github.com/RADAR-CNS/RADAR-RestApi/tree/dev)
+A small python GUI tool for interfacing with the REST API @ [RADAR-RestApi/dev](https://github.com/RADAR-CNS/RADAR-RestApi/tree/dev).
+Already includes the python API client generated at http://editor.swagger.io/
+
 ### Dependencies:
 ```
-pip3 install numpy certifi pyqt5 pyqtgraph
+pip3 install numpy pyqtgraph pyqt5 urllib3 certifi six
 ```
-### Installation:
-- Go to http://editor.swagger.io/
-- `File > Import URL > http://radar-restapi.eu-west-1.elasticbeanstalk.com/api/swagger.json > OK`
-- In the left pane edit value of `host` to your API URL
-- In the left pane edit value of `schemes` to `https`
-- `Generate Client > python`
-- Unzip the generated folder into this directory
-- (optional) in `python-client/swagger_client/configuration.py` change `self.verify_ssl` to `False`
-- copy `cp -r python-client/swagger_client .`
+- [**pyqtgraph**](http://www.pyqtgraph.org/): A python library for easy drawing of scientific graphs and small application GUIs. Based on Qt and numpy.
+- [**pyqt5**](http://doc.qt.io/qt-5/qt5-intro.html): Qt is cross-platform application framework, used to draw the GUI elements. Dependency of *pyqtgraph*.
+- [**urllib3**](https://urllib3.readthedocs.io/en/latest/): Powerful Python HTTP client library. Dependency of *swagger_client*.
+- [**certifi**](https://pypi.python.org/pypi/certifi): Curated collection of Root Certificates for SSL authentication. Dependency of *swagger_client*.
+- [**six**](https://pypi.python.org/pypi/six):  Python 2 and 3 compatibility library. Dependency of *swagger_client*.
 
-As far as I can tell there is currently an issue in the swagger generation, to fix it run exactly:
+### Installation:
+- clone the repository to your local drive and `cd` into it
+- in `swagger_client/configuration.py` change the line
+``` python
+self.host = "https://[host]/api"
 ```
-sed -ie "/return_data\ =\ None/s/None/self.deserialize\(response_data,\"object\"\)/" swagger_client/api_client.py
+to point to your local RADAR-RestApi endpoint. For example:
+``` python
+self.host = "https://example.server.com/api"
 ```

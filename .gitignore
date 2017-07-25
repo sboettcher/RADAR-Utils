@@ -1,5 +1,7 @@
 python-client/
-swagger_client/
 
 __*__/
+
+*.pyc
+*.pye
 
