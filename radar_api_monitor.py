@@ -55,7 +55,7 @@ status_desc = {
                 "N/A": {"priority": -1, "th_min": -1, "th_bat": -1, "color": "lightgrey"}
               }
 
-max_data_buf = 8192
+max_data_buf = 60480 # 1 week
 
 timedateformat = "%Y-%m-%d %H:%M:%S UTC "
 datastampformat = "%Y-%m-%dT%H:%M:%SZ"
@@ -65,6 +65,10 @@ utcOffset = time.timezone - (time.daylight * 3600)
 def eprint(*args, **kwargs):
   print(*args, file=sys.stderr, **kwargs)
 
+def thread_sleep(msec):
+  global running
+  for i in range(math.ceil(msec/1000.)):
+    if running: time.sleep(1)
 
 
 def raw_api_callback(response):
@@ -160,8 +164,8 @@ def raw_api_thread(api_instance):
   global running, raw_api_data, monitor_data, subjects, subject_sources
 
   while(running):
-    time.sleep(args.api_refresh/1000.)
     if (tab_widget.currentIndex() != 0):
+      thread_sleep(args.api_refresh)
       continue
 
     # always get list of subjects and sources first, everything else depends on this
@@ -201,13 +205,15 @@ def raw_api_thread(api_instance):
     except ApiException as e:
       logging.error("Exception when calling DefaultApi->get_%s_json[]: %s\n" % method_select.value(), e)
 
+    thread_sleep(args.api_refresh)
+
 
 def monitor_api_thread(api_instance):
   global running, raw_api_data, monitor_data, subjects, subject_sources
 
   while(running):
-    time.sleep(args.api_refresh/1000.)
     if (tab_widget.currentIndex() != 1):
+      thread_sleep(args.api_refresh)
       continue
 
     # always get list of subjects and sources first, everything else depends on this
@@ -215,17 +221,24 @@ def monitor_api_thread(api_instance):
 
     try:
       cb = monitor_callback
+      if args.verbose: print()
+      if args.verbose: logging.info("----------")
+      databuf_lengths = [ len(deq) for buf in [ x["data_buf"] for x in monitor_data ] for sen,deq in buf.items() ]
+      if args.verbose: logging.info("Starting API requests.")
+      if args.verbose and len(databuf_lengths) > 0: logging.info("Databuffer size min:{} avg:{} max:{}".format(min(databuf_lengths), np.mean(databuf_lengths, dtype=np.int_), max(databuf_lengths)))
+      if args.verbose: logging.info("----------")
       for sub in subject_sources.keys():
         for src in subject_sources[sub]:
-          if args.verbose: logging.debug("query of {} at {}:".format(src, sub))
+          if args.verbose: logging.info("query of sensors @ {}/{}".format(sub, src))
           for s in sensors:
             thread = api_instance.get_samples_json(s, monitor_stat_select.value(), monitor_interval_select.value(), sub, src, callback=cb)
             time.sleep(0.1)
       #if args.api_refresh/1000. < 10: time.sleep(10 - (args.api_refresh/1000.)) #wait at least ten seconds for refresh
-      if args.verbose: logging.debug("----------\n")
 
     except ApiException as e:
       logging.error("Exception when calling DefaultApi->get_last_received_sample_json[]: %s\n" % e)
+
+    thread_sleep(args.api_refresh)
 
 
 
@@ -316,7 +329,7 @@ def update_gui():
   global running, raw_api_data, monitor_data, subjects, subject_sources
 
   # update timedate label
-  timedate_label.setText(api_config.host + " | " + datetime.datetime.utcnow().strftime(timedateformat))
+  timedate_label.setText(api_instance.config.host + " | " + datetime.datetime.utcnow().strftime(timedateformat))
 
   # raw api tab
   if (tab_widget.currentIndex() == 0):
@@ -420,7 +433,7 @@ if __name__=="__main__":
   #cmdline.add_argument('-q', '--quiet', help='be quiet\n', action='store_true')
   cmdline.add_argument('-l', '--logging', metavar="LVL", type=str, default="DEBUG", help='set logging level\n', choices=logging_levels)
 
-  cmdline.add_argument('-ra', '--api-refresh', metavar="MS", type=float, default=1000., help="api refresh rate (ms)\n")
+  cmdline.add_argument('-ra', '--api-refresh', metavar="MS", type=float, default=10000., help="api refresh rate (ms)\n")
 
   cmdline_gui_group = cmdline.add_argument_group('GUI arguments')
   cmdline_gui_group.add_argument('--title', type=str, default="RADAR-CNS api monitor", help="window title\n")
@@ -475,7 +488,6 @@ if __name__=="__main__":
 
   # create an instance of the API class
   api_instance = swagger_client.DefaultApi()
-  api_config = swagger_client.Configuration()
 
   monitor_data_rlock = threading.RLock()
 
@@ -722,7 +734,7 @@ if __name__=="__main__":
   tab_widget.addTab(monitor_widget, "Monitor")
   tab_widget.addTab(devices_widget, "Devices")
   tab_widget.setCurrentIndex(args.start_tab)
-  timedate_label = QtGui.QLabel(api_config.host + " | " + datetime.datetime.utcnow().strftime(timedateformat))
+  timedate_label = QtGui.QLabel(api_instance.config.host + " | " + datetime.datetime.utcnow().strftime(timedateformat))
   tab_widget.setCornerWidget(timedate_label)
 
   # connect update and start timer
