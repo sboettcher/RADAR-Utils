@@ -91,7 +91,7 @@ def monitor_callback(response):
     last_sample = samples[len(samples)-1]
     last_stamp = last_sample["startDateTime"]
   except TypeError as ex:
-    if args.verbose: logging.warn("[MONITOR] TypeError in monitor_callback: " + ex)
+    if args.verbose: logging.warn("[MONITOR] TypeError in monitor_callback: " + str(ex))
     return
 
   monitor_data_rlock.acquire()
@@ -332,7 +332,7 @@ def update_gui():
   timedate_label.setText(api_instance.config.host + " | " + datetime.datetime.utcnow().strftime(timedateformat))
 
   # raw api tab
-  if (tab_widget.currentIndex() == 0):
+  if (tab_widget.currentIndex() == 0 and data_update_check.isChecked()):
     # update id and source fields
     id_select.clear()
     source_select.clear()
@@ -349,7 +349,7 @@ def update_gui():
 
 
   # monitor tab
-  elif (tab_widget.currentIndex() == 1 and monitor_update_check.isChecked()):
+  elif (tab_widget.currentIndex() == 1):
     sensor = monitor_sensor_select.value()
 
     # filter monitor data
@@ -392,7 +392,7 @@ def update_gui():
 
     # get selected item and draw line plot
     sel = monitor_table.selectedItems()
-    if len(sel) > 0:
+    if len(sel) > 0 and monitor_update_check.isChecked():
       sel_sub = monitor_table.item(sel[0].row(), 0).text()
       sel_src = monitor_table.item(sel[0].row(), 1).text()
       data = [ d for d in dataset if d["subjectId"] == sel_sub and d["sourceId"] == sel_src ][0]
@@ -488,6 +488,7 @@ if __name__=="__main__":
 
   # create an instance of the API class
   api_instance = swagger_client.DefaultApi()
+  logging.info("RADAR-CNS API client @ {}".format(api_instance.config.host))
 
   monitor_data_rlock = threading.RLock()
 
@@ -644,6 +645,12 @@ if __name__=="__main__":
   if args.method: method_select.setValue(args.method)
   raw_api_layout.addWidget(QtGui.QLabel("Method"),grid_idx,0)
   raw_api_layout.addWidget(method_select,grid_idx,1)
+
+  grid_idx+=1
+  # add data update checkbox
+  data_update_check = QtGui.QCheckBox("Update data")
+  data_update_check.setChecked(True)
+  raw_api_layout.addWidget(data_update_check,grid_idx,0)
 
   grid_idx+=1
   # add data tree for response vis
