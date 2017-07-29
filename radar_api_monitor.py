@@ -20,11 +20,13 @@ urllib3.disable_warnings()
 from pyqtgraph.Qt import VERSION_INFO
 from pyqtgraph.Qt import QtGui, QtCore
 import pyqtgraph as pg
-from DateAxisItem import *
+from libs.DateAxisItem import *
 
 import threading
 import logging
 logging_levels = ["CRITICAL", "ERROR", "WARNING", "INFO", "DEBUG"]
+
+from libs.radar_patient_source import RadarPatientSource
 
 global running, raw_api_data, monitor_data, subjects, subject_sources
 
@@ -99,46 +101,12 @@ def monitor_callback(response):
   monitor_data_rlock.acquire()
 
   # find current data index
-  data_idx = 0
-  for i in range(len(monitor_data)):
-    if monitor_data[i]["subjectId"] == patient_id and monitor_data[i]["sourceId"] == source_id:
-      data_idx = i
-      break
+  data_idx = monitor_data.index((patient_id,source_id))
 
-  # propagate status
-  if sensor in monitor_data[data_idx]["status"]: status = monitor_data[data_idx]["status"][sensor]
+  monitor_data[data_idx].data_buf.replaceSamples(sensor, samples)
 
-  # update monitor table data
-  now = datetime.datetime.utcnow()
-  stamp_date = datetime.datetime.strptime(last_stamp, datastampformat)
-  diff = now - stamp_date
-  if diff < datetime.timedelta():
-    diff = datetime.timedelta()
-
-  # set status
-  if sensor == "BATTERY":
-    bat = last_sample["sample"]["value"]
-    for st in sorted(status_desc.items(), key=lambda x: x[1]['th_bat']):
-      th = st[1]["th_bat"]
-      if th >= 0 and bat > th:
-        status = st[0]
-  else:
-    for st in sorted(status_desc.items(), key=lambda x: x[1]['th_min']):
-      th = st[1]["th_min"]
-      if th >= 0 and diff >= datetime.timedelta(minutes=th):
-        status = st[0]
-    #if "BATTERY" in monitor_data[data_idx]["status"]:
-    #  batstat = monitor_data[data_idx]["status"]["BATTERY"]
-    #  if status_desc[batstat]["priority"] > status_desc[status]["priority"]: status = batstat
-
+  status = monitor_data[data_idx].getStatus(sensor)
   logging.debug("[MONITOR] status of {} @ {}/{}: {}".format(sensor, patient_id, source_id, status))
-
-  monitor_data[data_idx]["status"][sensor] = status
-  monitor_data[data_idx]["stamp"][sensor] = last_stamp.replace("T", " ").replace("Z", "")
-  monitor_data[data_idx]["diff"][sensor] = str(diff).split(".")[0]
-  if sensor == "BATTERY": monitor_data[data_idx]["battery"] = "{:.2%}".format(last_sample["sample"]["value"])
-
-  replace_data_buf(monitor_data[data_idx]["data_buf"], sensor, samples, maxlen=max_data_buf)
 
   monitor_data_rlock.release()
 
@@ -225,7 +193,7 @@ def monitor_api_thread(api_instance):
       cb = monitor_callback
       if logging.getLogger().getEffectiveLevel() < 30: print()
       logging.info("----------")
-      databuf_lengths = [ len(deq) for buf in [ x["data_buf"] for x in monitor_data ] for sen,deq in buf.items() ]
+      databuf_lengths = [ l for buf in [ ps.getBufferLengths() for ps in monitor_data ] for l in buf ]
       logging.info("Starting API requests.")
       if len(databuf_lengths) > 0: logging.info("Databuffer size min:{} avg:{} max:{}".format(min(databuf_lengths), np.mean(databuf_lengths, dtype=np.int_), max(databuf_lengths)))
       logging.info("----------")
@@ -259,25 +227,10 @@ def get_subjects_sources_info():
   monitor_data_rlock.acquire()
   for sub in sorted(subject_sources.keys()):
     for src in subject_sources[sub]:
-      # update monitor sources list
       src = src if src not in devices or not args.dev_replace or devices[src][args.dev_replace] == "" else devices[src][args.dev_replace]
       # check if entry already exists, skip if yes
-      exists = False
-      for i in range(len(monitor_data)):
-        if monitor_data[i]["subjectId"] == sub and monitor_data[i]["sourceId"] == src:
-          exists = True
-      if len(monitor_data) > 0 and exists: continue
-
-      row = collections.OrderedDict()
-      row["subjectId"] = sub
-      row["sourceId"] = src
-      row["status"] = dict()
-      #row["sensor"] = "N/A"
-      row["stamp"] = dict()
-      row["diff"] = dict()
-      row["battery"] = "-"
-      row["data_buf"] = dict()
-      monitor_data.append(row)
+      if len(monitor_data) > 0 and (sub,src) in monitor_data: continue
+      monitor_data.append(RadarPatientSource(sub, src))
   monitor_data_rlock.release()
 
 
@@ -291,21 +244,19 @@ def sort_tree_item(treeitem, recursive=True):
     sort_tree_item(treeitem.child(c))
 
 
-# checks if the given table contains the data row (as list or OrderedDict),
+# checks if the given table contains the data row (list),
 # tests if all columns in colcheck are equal
 def table_contains_data(table, data, colcheck=[0]):
-  if not isinstance(data, list): data = list(data.items())
+  if not isinstance(data, list): return
   for r in range(table.rowCount()):
-    equal = 0
-    for c in colcheck:
-      if table.item(r,c).text() == data[c][1]: equal += 1
-    if equal == len(colcheck): return r
+    comp = [ table.item(r,c).text() for c in colcheck ]
+    if len([ i for i in comp if i in data ]) == len(comp): return r
   return -1
 
-# adds a new data row (list or OrderedDict) to the given table, or replaces the data if it already exists.
-# Possibility to provide a key if an item turns out to be a dict or list
+# adds a new data row (list) to the given table, or replaces the data if it already exists.
+# Possibility to provide a key if an item turns out to be a dict
 def table_add_data(table, data, colcheck=[0], key=None):
-  if not isinstance(data, list): data = list(data.items())
+  if not isinstance(data, list): return
 
   # check if row exists, else add one
   row = table_contains_data(table, data, colcheck)
@@ -315,11 +266,9 @@ def table_add_data(table, data, colcheck=[0], key=None):
     for i in range(table.columnCount()):
       table.setItem(row, i, QtGui.QTableWidgetItem())
 
+  # add data
   for i in range(table.columnCount()):
-    if isinstance(data[i][1], dict) or isinstance(data[i][1], list):
-      if key in data[i][1]: table.item(row,i).setText(data[i][1][key])
-    else:
-      table.item(row,i).setText(data[i][1])
+    table.item(row,i).setText(str(data[i]))
 
 # clears the table of rows, except those with indices in keep
 def table_clear(table, keep=[]):
@@ -356,38 +305,32 @@ def update_gui():
 
     # filter monitor data
     monitor_data_rlock.acquire()
-    dataset = [ copy.deepcopy(d) for d in monitor_data if monitor_view_all_check.isChecked() or (sensor in d["status"] and status_desc[d["status"][sensor]]["priority"] > 0) ]
+    dataset = [ copy.deepcopy(d) for d in monitor_data if monitor_view_all_check.isChecked() or status_desc[d.getPrioStatus()]["priority"] > 0 ]
     monitor_data_rlock.release()
 
     # clear table
     contains = []
     for d in dataset:
-      c = table_contains_data(monitor_table, d, [0,1])
+      c = table_contains_data(monitor_table, [d.subjectID, d.sourceID], [0,1])
       if c > -1: contains.append(c)
     table_clear(monitor_table, contains)
 
     # add/replace data
     for d in dataset:
       # populate value field
-      if sensor in d["data_buf"]:
-        sample = d["data_buf"][sensor][-1]["sample"]
+      if d.getLastSample(sensor) is not None:
+        sample = d.getLastSample(sensor)["sample"]
         if "value" in sample:
-          d["value"] = str(sample["value"])
+          value = str(sample["value"])
         else:
-          d["value"] = "x: {:.2} | y: {:.2} | z: {:.2}".format(sample["x"],sample["y"],sample["z"])
-        d.move_to_end("data_buf")
-
-      # repopulate status and sensor field
-      #if sensor in d["status"]: d["sensor"] = d["status"][sensor]
-      priority_status = "N/A"
-      for k in d["status"].keys():
-        if status_desc[d["status"][k]]["priority"] > status_desc[priority_status]["priority"]:
-          priority_status = d["status"][k]
-      d["status"] = priority_status
+          value = "x: {:.2} | y: {:.2} | z: {:.2}".format(sample["x"],sample["y"],sample["z"])
 
       # add data
-      table_add_data(monitor_table, d, key=sensor, colcheck=[0,1])
+      # ["subjectId","sourceId","status","stamp","diff","battery","value"]
+      row = [d.subjectID, d.sourceID, d.getPrioStatus(), d.getLastStamp(sensor), str(d.getDiff(sensor)).split(".")[0], d.getBattery(), value]
+      table_add_data(monitor_table, row, colcheck=[0,1])
 
+    # set color of status fields
     for status in status_desc.keys():
       for item in monitor_table.findItems(status, QtCore.Qt.MatchExactly):
         item.setBackground(QtGui.QBrush(QtGui.QColor(status_desc[status]["color"])))
@@ -397,10 +340,10 @@ def update_gui():
     if len(sel) > 0 and monitor_update_check.isChecked():
       sel_sub = monitor_table.item(sel[0].row(), 0).text()
       sel_src = monitor_table.item(sel[0].row(), 1).text()
-      data = [ d for d in dataset if d["subjectId"] == sel_sub and d["sourceId"] == sel_src ][0]
-      if sensor in data["data_buf"]:
+      data = [ d for d in dataset if d == (sel_sub,sel_src) ][0]
+      if data.getLastSample(sensor) is not None:
         # data samples to be plotted (y-axis)
-        data = data["data_buf"][sensor]
+        data = data.getSamples(sensor)
         # unix time stamps from the data samples (x-axis)
         stamps = [ datetime.datetime.strptime(d["startDateTime"], datastampformat).timestamp() - utcOffset for d in data ]
 
