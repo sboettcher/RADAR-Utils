@@ -10,8 +10,8 @@ import math, random
 import numpy as np
 import collections
 import csv
-
 from pprint import pprint
+
 import swagger_client
 from swagger_client.rest import ApiException
 import urllib3
@@ -29,7 +29,7 @@ logging_levels = ["CRITICAL", "ERROR", "WARNING", "INFO", "DEBUG"]
 global running, raw_api_data, monitor_data, subjects, subject_sources
 
 sourceTypes = ["ANDROID", "EMPATICA", "PEBBLE", "BIOVOTION"]
-sensors = ["ACCELEROMETER", "BATTERY", "BLOOD_VOLUME_PULSE", "ELECTRODERMAL_ACTIVITY", "INTER_BEAT_INTERVAL", "HEART_RATE", "THERMOMETER"]
+sensorTypes = ["ACCELEROMETER", "BATTERY", "BLOOD_VOLUME_PULSE", "ELECTRODERMAL_ACTIVITY", "INTER_BEAT_INTERVAL", "HEART_RATE", "THERMOMETER"]
 stats = ["AVERAGE", "COUNT", "MAXIMUM", "MEDIAN", "MINIMUM", "SUM", "INTERQUARTILE_RANGE", "LOWER_QUARTILE", "UPPER_QUARTILE", "QUARTILES", "RECEIVED_MESSAGES"]
 intervals = ["TEN_SECOND", "THIRTY_SECOND", "ONE_MIN", "TEN_MIN", "ONE_HOUR", "ONE_DAY", "ONE_WEEK"]
 
@@ -73,13 +73,15 @@ def thread_sleep(msec):
 
 def raw_api_callback(response):
   global running, raw_api_data, monitor_data, subjects, subject_sources
-  if args.verbose: logging.debug("[RAW] got response.")
+  logging.debug("[RAW] got response.")
   if args.verbose and args.verbose > 1: pprint(response)
   raw_api_data = response
 
 def monitor_callback(response):
   global running, raw_api_data, monitor_data, subjects, subject_sources
   if args.verbose and args.verbose > 1: pprint(response)
+
+  if response == '': return
 
   try:
     patient_id = response["header"]["subjectId"]
@@ -91,7 +93,7 @@ def monitor_callback(response):
     last_sample = samples[len(samples)-1]
     last_stamp = last_sample["startDateTime"]
   except TypeError as ex:
-    if args.verbose: logging.warn("[MONITOR] TypeError in monitor_callback: " + str(ex))
+    logging.warn("[MONITOR] TypeError in monitor_callback: " + str(ex))
     return
 
   monitor_data_rlock.acquire()
@@ -129,7 +131,7 @@ def monitor_callback(response):
     #  batstat = monitor_data[data_idx]["status"]["BATTERY"]
     #  if status_desc[batstat]["priority"] > status_desc[status]["priority"]: status = batstat
 
-  if args.verbose: logging.debug("[MONITOR] status of {} @ {}/{}: {}".format(sensor, patient_id, source_id, status))
+  logging.debug("[MONITOR] status of {} @ {}/{}: {}".format(sensor, patient_id, source_id, status))
 
   monitor_data[data_idx]["status"][sensor] = status
   monitor_data[data_idx]["stamp"][sensor] = last_stamp.replace("T", " ").replace("Z", "")
@@ -221,18 +223,18 @@ def monitor_api_thread(api_instance):
 
     try:
       cb = monitor_callback
-      if args.verbose: print()
-      if args.verbose: logging.info("----------")
+      if logging.getLogger().getEffectiveLevel() < 30: print()
+      logging.info("----------")
       databuf_lengths = [ len(deq) for buf in [ x["data_buf"] for x in monitor_data ] for sen,deq in buf.items() ]
-      if args.verbose: logging.info("Starting API requests.")
-      if args.verbose and len(databuf_lengths) > 0: logging.info("Databuffer size min:{} avg:{} max:{}".format(min(databuf_lengths), np.mean(databuf_lengths, dtype=np.int_), max(databuf_lengths)))
-      if args.verbose: logging.info("----------")
+      logging.info("Starting API requests.")
+      if len(databuf_lengths) > 0: logging.info("Databuffer size min:{} avg:{} max:{}".format(min(databuf_lengths), np.mean(databuf_lengths, dtype=np.int_), max(databuf_lengths)))
+      logging.info("----------")
       for sub in subject_sources.keys():
         for src in subject_sources[sub]:
-          if args.verbose: logging.info("query of sensors @ {}/{}".format(sub, src))
-          for s in sensors:
+          logging.info("query of sensorTypes @ {}/{}".format(sub, src))
+          for s in sensorTypes:
             thread = api_instance.get_samples_json(s, monitor_stat_select.value(), monitor_interval_select.value(), sub, src, callback=cb)
-            time.sleep(0.1)
+            time.sleep(args.api_interval/1000.)
       #if args.api_refresh/1000. < 10: time.sleep(10 - (args.api_refresh/1000.)) #wait at least ten seconds for refresh
 
     except ApiException as e:
@@ -431,15 +433,16 @@ if __name__=="__main__":
   cmdline.add_argument('-V', '--version', help='print version info and exit\n', action='store_true')
   cmdline.add_argument('-v', '--verbose', help='be verbose\n', action='count')
   #cmdline.add_argument('-q', '--quiet', help='be quiet\n', action='store_true')
-  cmdline.add_argument('-l', '--logging', metavar="LVL", type=str, default="DEBUG", help='set logging level\n', choices=logging_levels)
+  cmdline.add_argument('-l', '--logging', metavar="LVL", type=str, default="INFO", help='set logging level\n', choices=logging_levels)
 
-  cmdline.add_argument('-ra', '--api-refresh', metavar="MS", type=float, default=10000., help="api refresh rate (ms)\n")
+  cmdline.add_argument('-ar', '--api-refresh', metavar="MS", type=float, default=1000., help="api refresh rate (ms)\n")
+  cmdline.add_argument('-ai', '--api-interval', metavar="MS", type=float, default=100., help="api interval rate (ms)\n")
 
   cmdline_gui_group = cmdline.add_argument_group('GUI arguments')
   cmdline_gui_group.add_argument('--title', type=str, default="RADAR-CNS api monitor", help="window title\n")
   cmdline_gui_group.add_argument('--invert-fbg-colors', help="invert fore/background colors\n", action="store_true")
-  cmdline_gui_group.add_argument('-rg', '--gui-refresh', metavar="MS", type=float, default=1000., help="gui refresh rate (ms)\n")
-  cmdline_gui_group.add_argument('--maximized', help="start window maximized\n", action="store_true")
+  cmdline_gui_group.add_argument('-gr', '--gui-refresh', metavar="MS", type=float, default=1000., help="gui refresh rate (ms)\n")
+  cmdline_gui_group.add_argument('-m', '--maximized', help="start window maximized\n", action="store_true")
 
   cmdline_devices_group = cmdline.add_argument_group('device manipulation arguments')
   cmdline_devices_group.add_argument('-d', '--devices', type=str, help="csv file for importing device descriptions.\n")
@@ -450,7 +453,7 @@ if __name__=="__main__":
   cmdline_defaults_group.add_argument('--studyid', type=str, default="0", help="start with this studyId selected\n")
   cmdline_defaults_group.add_argument('-u', '--userid', type=str, default="UKLFR", help="start with this userId selected\n")
   cmdline_defaults_group.add_argument('-s', '--sourceid', type=str, help="start with this sourceId selected\n")
-  cmdline_defaults_group.add_argument('--sensor', type=str, default="ACCELEROMETER", help="start with this sensor selected\n", choices=sensors)
+  cmdline_defaults_group.add_argument('--sensor', type=str, default="ACCELEROMETER", help="start with this sensor selected\n", choices=sensorTypes)
   cmdline_defaults_group.add_argument('--stat', type=str, default="AVERAGE", help="start with this stat selected\n", choices=stats)
   cmdline_defaults_group.add_argument('--interval', type=str, default="TEN_SECOND", help="start with this interval selected\n", choices=intervals)
   cmdline_defaults_group.add_argument('--method', type=str, default="all_subjects", help="start with this method selected\n", choices=methods)
@@ -599,7 +602,7 @@ if __name__=="__main__":
   grid_idx+=1
   # add sensor selection field
   sensor_select = pg.ComboBox()
-  sensor_select.addItems(sensors)
+  sensor_select.addItems(sensorTypes)
   if args.sensor: sensor_select.setValue(args.sensor)
   sensor_select.setEnabled(True)
   raw_api_layout.addWidget(QtGui.QLabel("Sensor"),grid_idx,0)
@@ -669,7 +672,7 @@ if __name__=="__main__":
 
   # add sensor selection field
   monitor_sensor_select = pg.ComboBox()
-  monitor_sensor_select.addItems(sensors)
+  monitor_sensor_select.addItems(sensorTypes)
   if args.sensor: monitor_sensor_select.setValue(args.sensor)
   monitor_layout.addWidget(monitor_sensor_select,0,1)
 
