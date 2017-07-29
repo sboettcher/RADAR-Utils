@@ -51,7 +51,7 @@ status_desc = {
                 "OK": {"priority": 2, "th_min": 2, "th_bat": 0.10, "color": "moccasin"},
                 "WARNING": {"priority": 3, "th_min": 3, "th_bat": 0.05, "color": "orange"},
                 "CRITICAL": {"priority": 4, "th_min": 5, "th_bat": 0, "color": "red"},
-                "DISCONNECTED": {"priority": 0, "th_min": 30, "th_bat": -1, "color": "transparent"},
+                "DISCONNECTED": {"priority": 0, "th_min": 10, "th_bat": -1, "color": "transparent"},
                 "N/A": {"priority": -1, "th_min": -1, "th_bat": -1, "color": "lightgrey"}
               }
 
@@ -84,7 +84,7 @@ def monitor_callback(response):
   try:
     patient_id = response["header"]["subjectId"]
     source_id = response["header"]["sourceId"]
-    source_id = source_id if source_id not in devices or not args.dev_replace else devices[source_id][args.dev_replace]
+    source_id = source_id if source_id not in devices or not args.dev_replace or devices[source_id][args.dev_replace] == "" else devices[source_id][args.dev_replace]
     sensor = response["header"]["sensor"]
     status = "N/A"
     samples = response["dataset"]
@@ -258,7 +258,7 @@ def get_subjects_sources_info():
   for sub in sorted(subject_sources.keys()):
     for src in subject_sources[sub]:
       # update monitor sources list
-      src = src if src not in devices or not args.dev_replace else devices[src][args.dev_replace]
+      src = src if src not in devices or not args.dev_replace or devices[src][args.dev_replace] == "" else devices[src][args.dev_replace]
       # check if entry already exists, skip if yes
       exists = False
       for i in range(len(monitor_data)):
@@ -270,7 +270,7 @@ def get_subjects_sources_info():
       row["subjectId"] = sub
       row["sourceId"] = src
       row["status"] = dict()
-      row["sensor"] = "N/A"
+      #row["sensor"] = "N/A"
       row["stamp"] = dict()
       row["diff"] = dict()
       row["battery"] = "-"
@@ -376,7 +376,7 @@ def update_gui():
         d.move_to_end("data_buf")
 
       # repopulate status and sensor field
-      if sensor in d["status"]: d["sensor"] = d["status"][sensor]
+      #if sensor in d["status"]: d["sensor"] = d["status"][sensor]
       priority_status = "N/A"
       for k in d["status"].keys():
         if status_desc[d["status"][k]]["priority"] > status_desc[priority_status]["priority"]:
@@ -443,7 +443,7 @@ if __name__=="__main__":
 
   cmdline_devices_group = cmdline.add_argument_group('device manipulation arguments')
   cmdline_devices_group.add_argument('-d', '--devices', type=str, help="csv file for importing device descriptions.\n")
-  cmdline_devices_group.add_argument('--dev-replace', type=str, help="replace device source string (MAC) with the string from this column in the loaded csv.\nMust be unique!\nRequires --devices.\n")
+  cmdline_devices_group.add_argument('-dr', '--dev-replace', type=str, help="replace device source string (MAC) with the string from this column in the loaded csv.\nMust be unique!\nRequires --devices.\n")
 
   cmdline_defaults_group = cmdline.add_argument_group('default selections')
   cmdline_defaults_group.add_argument('-t', '--start-tab', type=int, default=1, help="start with this tab selected\n")
@@ -688,8 +688,8 @@ if __name__=="__main__":
   monitor_layout.addWidget(monitor_interval_select,0,3)
 
   # add table for monitor overview
-  monitor_table = QtGui.QTableWidget(0,8)
-  monitor_table.setHorizontalHeaderLabels(["subjectId","sourceId","status","sensor","stamp","diff","battery","value"])
+  monitor_table = QtGui.QTableWidget(0,7)
+  monitor_table.setHorizontalHeaderLabels(["subjectId","sourceId","status","stamp","diff","battery","value"])
   monitor_table.horizontalHeader().setSectionResizeMode(QtGui.QHeaderView.ResizeToContents)
   monitor_layout.addWidget(monitor_table,1,0,1,4)
 
