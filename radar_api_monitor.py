@@ -12,8 +12,8 @@ import collections
 import csv
 from pprint import pprint
 
-import swagger_client
-from swagger_client.rest import ApiException
+import libs.swagger_client as api_client
+from libs.swagger_client.rest import ApiException
 import urllib3
 urllib3.disable_warnings()
 
@@ -230,7 +230,7 @@ def get_subjects_sources_info():
       src = src if src not in devices or not args.dev_replace or devices[src][args.dev_replace] == "" else devices[src][args.dev_replace]
       # check if entry already exists, skip if yes
       if len(monitor_data) > 0 and (sub,src) in monitor_data: continue
-      monitor_data.append(RadarPatientSource(sub, src))
+      monitor_data.append(RadarPatientSource(sub, src, bufferlen=max_data_buf))
   monitor_data_rlock.release()
 
 
@@ -325,11 +325,18 @@ def update_gui():
         else:
           value = "x: {:.2} | y: {:.2} | z: {:.2}".format(sample["x"],sample["y"],sample["z"])
 
+      # get battery status
+      battery = d.getBattery()
+      if not isinstance(battery, str): battery = "{:.2%}".format(battery)
+
       # add data
       # ["subjectId","sourceId","status","stamp","diff","battery","value"]
-      row = [d.subjectID, d.sourceID, d.getPrioStatus(), d.getLastStamp(sensor), str(d.getDiff(sensor)).split(".")[0], d.getBattery(), value]
+      row = [d.subjectID, d.sourceID, d.getPrioStatus(), battery, d.getLastStamp(sensor), str(d.getDiff(sensor)).split(".")[0], value]
       table_add_data(monitor_table, row, colcheck=[0,1])
 
+    # reset color of table cells
+    for item in monitor_table.findItems("*", QtCore.Qt.MatchWildcard):
+        item.setBackground(QtGui.QBrush(QtGui.QColor("transparent")))
     # set color of status fields
     for status in status_desc.keys():
       for item in monitor_table.findItems(status, QtCore.Qt.MatchExactly):
@@ -433,7 +440,7 @@ if __name__=="__main__":
   devices = dict()
 
   # create an instance of the API class
-  api_instance = swagger_client.DefaultApi()
+  api_instance = api_client.DefaultApi()
   logging.info("RADAR-CNS API client @ {}".format(api_instance.config.host))
 
   monitor_data_rlock = threading.RLock()
@@ -635,7 +642,7 @@ if __name__=="__main__":
 
   # add table for monitor overview
   monitor_table = QtGui.QTableWidget(0,7)
-  monitor_table.setHorizontalHeaderLabels(["subjectId","sourceId","status","stamp","diff","battery","value"])
+  monitor_table.setHorizontalHeaderLabels(["subjectId","sourceId","status","battery","stamp","diff","value"])
   monitor_table.horizontalHeader().setSectionResizeMode(QtGui.QHeaderView.ResizeToContents)
   monitor_layout.addWidget(monitor_table,1,0,1,4)
 
