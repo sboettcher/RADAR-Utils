@@ -10,26 +10,28 @@ import math, random
 import numpy as np
 import collections
 import csv
-
 from pprint import pprint
-import swagger_client
-from swagger_client.rest import ApiException
+
+import libs.swagger_client as api_client
+from libs.swagger_client.rest import ApiException
 import urllib3
 urllib3.disable_warnings()
 
 from pyqtgraph.Qt import VERSION_INFO
 from pyqtgraph.Qt import QtGui, QtCore
 import pyqtgraph as pg
-from DateAxisItem import *
+from libs.DateAxisItem import *
 
 import threading
 import logging
 logging_levels = ["CRITICAL", "ERROR", "WARNING", "INFO", "DEBUG"]
 
+from libs.radar_patient_source import RadarPatientSource
+
 global running, raw_api_data, monitor_data, subjects, subject_sources
 
 sourceTypes = ["ANDROID", "EMPATICA", "PEBBLE", "BIOVOTION"]
-sensors = ["ACCELEROMETER", "BATTERY", "BLOOD_VOLUME_PULSE", "ELECTRODERMAL_ACTIVITY", "INTER_BEAT_INTERVAL", "HEART_RATE", "THERMOMETER"]
+sensorTypes = ["ACCELEROMETER", "BATTERY", "BLOOD_VOLUME_PULSE", "ELECTRODERMAL_ACTIVITY", "INTER_BEAT_INTERVAL", "HEART_RATE", "THERMOMETER"]
 stats = ["AVERAGE", "COUNT", "MAXIMUM", "MEDIAN", "MINIMUM", "SUM", "INTERQUARTILE_RANGE", "LOWER_QUARTILE", "UPPER_QUARTILE", "QUARTILES", "RECEIVED_MESSAGES"]
 intervals = ["TEN_SECOND", "THIRTY_SECOND", "ONE_MIN", "TEN_MIN", "ONE_HOUR", "ONE_DAY", "ONE_WEEK"]
 
@@ -51,11 +53,11 @@ status_desc = {
                 "OK": {"priority": 2, "th_min": 2, "th_bat": 0.10, "color": "moccasin"},
                 "WARNING": {"priority": 3, "th_min": 3, "th_bat": 0.05, "color": "orange"},
                 "CRITICAL": {"priority": 4, "th_min": 5, "th_bat": 0, "color": "red"},
-                "DISCONNECTED": {"priority": 0, "th_min": 30, "th_bat": -1, "color": "transparent"},
+                "DISCONNECTED": {"priority": 0, "th_min": 10, "th_bat": -1, "color": "transparent"},
                 "N/A": {"priority": -1, "th_min": -1, "th_bat": -1, "color": "lightgrey"}
               }
 
-max_data_buf = 8192
+max_data_buf = 60480 # 1 week
 
 timedateformat = "%Y-%m-%d %H:%M:%S UTC "
 datastampformat = "%Y-%m-%dT%H:%M:%SZ"
@@ -65,11 +67,15 @@ utcOffset = time.timezone - (time.daylight * 3600)
 def eprint(*args, **kwargs):
   print(*args, file=sys.stderr, **kwargs)
 
+def thread_sleep(msec):
+  global running
+  for i in range(math.ceil(msec/1000.)):
+    if running: time.sleep(1)
 
 
 def raw_api_callback(response):
   global running, raw_api_data, monitor_data, subjects, subject_sources
-  if args.verbose: logging.debug("[RAW] got response.")
+  logging.debug("[RAW] got response.")
   if args.verbose and args.verbose > 1: pprint(response)
   raw_api_data = response
 
@@ -77,62 +83,30 @@ def monitor_callback(response):
   global running, raw_api_data, monitor_data, subjects, subject_sources
   if args.verbose and args.verbose > 1: pprint(response)
 
+  if response == '': return
+
   try:
     patient_id = response["header"]["subjectId"]
     source_id = response["header"]["sourceId"]
-    source_id = source_id if source_id not in devices or not args.dev_replace else devices[source_id][args.dev_replace]
+    source_id = source_id if source_id not in devices or not args.dev_replace or devices[source_id][args.dev_replace] == "" else devices[source_id][args.dev_replace]
     sensor = response["header"]["sensor"]
     status = "N/A"
     samples = response["dataset"]
     last_sample = samples[len(samples)-1]
     last_stamp = last_sample["startDateTime"]
   except TypeError as ex:
-    if args.verbose: logging.warn("[MONITOR] TypeError in monitor_callback: " + ex)
+    logging.warn("[MONITOR] TypeError in monitor_callback: " + str(ex))
     return
 
   monitor_data_rlock.acquire()
 
   # find current data index
-  data_idx = 0
-  for i in range(len(monitor_data)):
-    if monitor_data[i]["subjectId"] == patient_id and monitor_data[i]["sourceId"] == source_id:
-      data_idx = i
-      break
+  data_idx = monitor_data.index((patient_id,source_id))
 
-  # propagate status
-  if sensor in monitor_data[data_idx]["status"]: status = monitor_data[data_idx]["status"][sensor]
+  monitor_data[data_idx].data_buf.replaceSamples(sensor, samples)
 
-  # update monitor table data
-  now = datetime.datetime.utcnow()
-  stamp_date = datetime.datetime.strptime(last_stamp, datastampformat)
-  diff = now - stamp_date
-  if diff < datetime.timedelta():
-    diff = datetime.timedelta()
-
-  # set status
-  if sensor == "BATTERY":
-    bat = last_sample["sample"]["value"]
-    for st in sorted(status_desc.items(), key=lambda x: x[1]['th_bat']):
-      th = st[1]["th_bat"]
-      if th >= 0 and bat > th:
-        status = st[0]
-  else:
-    for st in sorted(status_desc.items(), key=lambda x: x[1]['th_min']):
-      th = st[1]["th_min"]
-      if th >= 0 and diff >= datetime.timedelta(minutes=th):
-        status = st[0]
-    #if "BATTERY" in monitor_data[data_idx]["status"]:
-    #  batstat = monitor_data[data_idx]["status"]["BATTERY"]
-    #  if status_desc[batstat]["priority"] > status_desc[status]["priority"]: status = batstat
-
-  if args.verbose: logging.debug("[MONITOR] status of {} @ {}/{}: {}".format(sensor, patient_id, source_id, status))
-
-  monitor_data[data_idx]["status"][sensor] = status
-  monitor_data[data_idx]["stamp"][sensor] = last_stamp.replace("T", " ").replace("Z", "")
-  monitor_data[data_idx]["diff"][sensor] = str(diff).split(".")[0]
-  if sensor == "BATTERY": monitor_data[data_idx]["battery"] = "{:.2%}".format(last_sample["sample"]["value"])
-
-  replace_data_buf(monitor_data[data_idx]["data_buf"], sensor, samples, maxlen=max_data_buf)
+  status = monitor_data[data_idx].getStatus(sensor)
+  logging.debug("[MONITOR] status of {} @ {}/{}: {}".format(sensor, patient_id, source_id, status))
 
   monitor_data_rlock.release()
 
@@ -160,8 +134,8 @@ def raw_api_thread(api_instance):
   global running, raw_api_data, monitor_data, subjects, subject_sources
 
   while(running):
-    time.sleep(args.api_refresh/1000.)
     if (tab_widget.currentIndex() != 0):
+      thread_sleep(args.api_refresh)
       continue
 
     # always get list of subjects and sources first, everything else depends on this
@@ -201,13 +175,15 @@ def raw_api_thread(api_instance):
     except ApiException as e:
       logging.error("Exception when calling DefaultApi->get_%s_json[]: %s\n" % method_select.value(), e)
 
+    thread_sleep(args.api_refresh)
+
 
 def monitor_api_thread(api_instance):
   global running, raw_api_data, monitor_data, subjects, subject_sources
 
   while(running):
-    time.sleep(args.api_refresh/1000.)
     if (tab_widget.currentIndex() != 1):
+      thread_sleep(args.api_refresh)
       continue
 
     # always get list of subjects and sources first, everything else depends on this
@@ -215,17 +191,24 @@ def monitor_api_thread(api_instance):
 
     try:
       cb = monitor_callback
+      if logging.getLogger().getEffectiveLevel() < 30: print()
+      logging.info("----------")
+      databuf_lengths = [ l for buf in [ ps.getBufferLengths() for ps in monitor_data ] for l in buf ]
+      logging.info("Starting API requests.")
+      if len(databuf_lengths) > 0: logging.info("Databuffer size min:{} avg:{} max:{}".format(min(databuf_lengths), np.mean(databuf_lengths, dtype=np.int_), max(databuf_lengths)))
+      logging.info("----------")
       for sub in subject_sources.keys():
         for src in subject_sources[sub]:
-          if args.verbose: logging.debug("query of {} at {}:".format(src, sub))
-          for s in sensors:
+          logging.info("query of sensorTypes @ {}/{}".format(sub, src))
+          for s in sensorTypes:
             thread = api_instance.get_samples_json(s, monitor_stat_select.value(), monitor_interval_select.value(), sub, src, callback=cb)
-            time.sleep(0.1)
+            time.sleep(args.api_interval/1000.)
       #if args.api_refresh/1000. < 10: time.sleep(10 - (args.api_refresh/1000.)) #wait at least ten seconds for refresh
-      if args.verbose: logging.debug("----------\n")
 
     except ApiException as e:
       logging.error("Exception when calling DefaultApi->get_last_received_sample_json[]: %s\n" % e)
+
+    thread_sleep(args.api_refresh)
 
 
 
@@ -244,25 +227,10 @@ def get_subjects_sources_info():
   monitor_data_rlock.acquire()
   for sub in sorted(subject_sources.keys()):
     for src in subject_sources[sub]:
-      # update monitor sources list
-      src = src if src not in devices or not args.dev_replace else devices[src][args.dev_replace]
+      src = src if src not in devices or not args.dev_replace or devices[src][args.dev_replace] == "" else devices[src][args.dev_replace]
       # check if entry already exists, skip if yes
-      exists = False
-      for i in range(len(monitor_data)):
-        if monitor_data[i]["subjectId"] == sub and monitor_data[i]["sourceId"] == src:
-          exists = True
-      if len(monitor_data) > 0 and exists: continue
-
-      row = collections.OrderedDict()
-      row["subjectId"] = sub
-      row["sourceId"] = src
-      row["status"] = dict()
-      row["sensor"] = "N/A"
-      row["stamp"] = dict()
-      row["diff"] = dict()
-      row["battery"] = "-"
-      row["data_buf"] = dict()
-      monitor_data.append(row)
+      if len(monitor_data) > 0 and (sub,src) in monitor_data: continue
+      monitor_data.append(RadarPatientSource(sub, src, bufferlen=max_data_buf))
   monitor_data_rlock.release()
 
 
@@ -276,21 +244,19 @@ def sort_tree_item(treeitem, recursive=True):
     sort_tree_item(treeitem.child(c))
 
 
-# checks if the given table contains the data row (as list or OrderedDict),
+# checks if the given table contains the data row (list),
 # tests if all columns in colcheck are equal
 def table_contains_data(table, data, colcheck=[0]):
-  if not isinstance(data, list): data = list(data.items())
+  if not isinstance(data, list): return
   for r in range(table.rowCount()):
-    equal = 0
-    for c in colcheck:
-      if table.item(r,c).text() == data[c][1]: equal += 1
-    if equal == len(colcheck): return r
+    comp = [ table.item(r,c).text() for c in colcheck ]
+    if len([ i for i in comp if i in data ]) == len(comp): return r
   return -1
 
-# adds a new data row (list or OrderedDict) to the given table, or replaces the data if it already exists.
-# Possibility to provide a key if an item turns out to be a dict or list
+# adds a new data row (list) to the given table, or replaces the data if it already exists.
+# Possibility to provide a key if an item turns out to be a dict
 def table_add_data(table, data, colcheck=[0], key=None):
-  if not isinstance(data, list): data = list(data.items())
+  if not isinstance(data, list): return
 
   # check if row exists, else add one
   row = table_contains_data(table, data, colcheck)
@@ -300,11 +266,9 @@ def table_add_data(table, data, colcheck=[0], key=None):
     for i in range(table.columnCount()):
       table.setItem(row, i, QtGui.QTableWidgetItem())
 
+  # add data
   for i in range(table.columnCount()):
-    if isinstance(data[i][1], dict) or isinstance(data[i][1], list):
-      if key in data[i][1]: table.item(row,i).setText(data[i][1][key])
-    else:
-      table.item(row,i).setText(data[i][1])
+    table.item(row,i).setText(str(data[i]))
 
 # clears the table of rows, except those with indices in keep
 def table_clear(table, keep=[]):
@@ -316,10 +280,10 @@ def update_gui():
   global running, raw_api_data, monitor_data, subjects, subject_sources
 
   # update timedate label
-  timedate_label.setText(api_config.host + " | " + datetime.datetime.utcnow().strftime(timedateformat))
+  timedate_label.setText(api_instance.config.host + " | " + datetime.datetime.utcnow().strftime(timedateformat))
 
   # raw api tab
-  if (tab_widget.currentIndex() == 0):
+  if (tab_widget.currentIndex() == 0 and data_update_check.isChecked()):
     # update id and source fields
     id_select.clear()
     source_select.clear()
@@ -336,56 +300,57 @@ def update_gui():
 
 
   # monitor tab
-  elif (tab_widget.currentIndex() == 1 and monitor_update_check.isChecked()):
+  elif (tab_widget.currentIndex() == 1):
     sensor = monitor_sensor_select.value()
 
     # filter monitor data
     monitor_data_rlock.acquire()
-    dataset = [ copy.deepcopy(d) for d in monitor_data if monitor_view_all_check.isChecked() or (sensor in d["status"] and status_desc[d["status"][sensor]]["priority"] > 0) ]
+    dataset = [ copy.deepcopy(d) for d in monitor_data if monitor_view_all_check.isChecked() or status_desc[d.getPrioStatus()]["priority"] > 0 ]
     monitor_data_rlock.release()
 
     # clear table
     contains = []
     for d in dataset:
-      c = table_contains_data(monitor_table, d, [0,1])
+      c = table_contains_data(monitor_table, [d.subjectID, d.sourceID], [0,1])
       if c > -1: contains.append(c)
     table_clear(monitor_table, contains)
 
     # add/replace data
     for d in dataset:
       # populate value field
-      if sensor in d["data_buf"]:
-        sample = d["data_buf"][sensor][-1]["sample"]
+      if d.getLastSample(sensor) is not None:
+        sample = d.getLastSample(sensor)["sample"]
         if "value" in sample:
-          d["value"] = str(sample["value"])
+          value = str(sample["value"])
         else:
-          d["value"] = "x: {:.2} | y: {:.2} | z: {:.2}".format(sample["x"],sample["y"],sample["z"])
-        d.move_to_end("data_buf")
+          value = "x: {:.2} | y: {:.2} | z: {:.2}".format(sample["x"],sample["y"],sample["z"])
 
-      # repopulate status and sensor field
-      if sensor in d["status"]: d["sensor"] = d["status"][sensor]
-      priority_status = "N/A"
-      for k in d["status"].keys():
-        if status_desc[d["status"][k]]["priority"] > status_desc[priority_status]["priority"]:
-          priority_status = d["status"][k]
-      d["status"] = priority_status
+      # get battery status
+      battery = d.getBattery()
+      if not isinstance(battery, str): battery = "{:.2%}".format(battery)
 
       # add data
-      table_add_data(monitor_table, d, key=sensor, colcheck=[0,1])
+      # ["subjectId","sourceId","status","stamp","diff","battery","value"]
+      row = [d.subjectID, d.sourceID, d.getPrioStatus(), battery, d.getLastStamp(sensor), str(d.getDiff(sensor)).split(".")[0], value]
+      table_add_data(monitor_table, row, colcheck=[0,1])
 
+    # reset color of table cells
+    for item in monitor_table.findItems("*", QtCore.Qt.MatchWildcard):
+        item.setBackground(QtGui.QBrush(QtGui.QColor("transparent")))
+    # set color of status fields
     for status in status_desc.keys():
       for item in monitor_table.findItems(status, QtCore.Qt.MatchExactly):
         item.setBackground(QtGui.QBrush(QtGui.QColor(status_desc[status]["color"])))
 
     # get selected item and draw line plot
     sel = monitor_table.selectedItems()
-    if len(sel) > 0:
+    if len(sel) > 0 and monitor_update_check.isChecked():
       sel_sub = monitor_table.item(sel[0].row(), 0).text()
       sel_src = monitor_table.item(sel[0].row(), 1).text()
-      data = [ d for d in dataset if d["subjectId"] == sel_sub and d["sourceId"] == sel_src ][0]
-      if sensor in data["data_buf"]:
+      data = [ d for d in dataset if d == (sel_sub,sel_src) ][0]
+      if data.getLastSample(sensor) is not None:
         # data samples to be plotted (y-axis)
-        data = data["data_buf"][sensor]
+        data = data.getSamples(sensor)
         # unix time stamps from the data samples (x-axis)
         stamps = [ datetime.datetime.strptime(d["startDateTime"], datastampformat).timestamp() - utcOffset for d in data ]
 
@@ -418,26 +383,27 @@ if __name__=="__main__":
   cmdline.add_argument('-V', '--version', help='print version info and exit\n', action='store_true')
   cmdline.add_argument('-v', '--verbose', help='be verbose\n', action='count')
   #cmdline.add_argument('-q', '--quiet', help='be quiet\n', action='store_true')
-  cmdline.add_argument('-l', '--logging', metavar="LVL", type=str, default="DEBUG", help='set logging level\n', choices=logging_levels)
+  cmdline.add_argument('-l', '--logging', metavar="LVL", type=str, default="INFO", help='set logging level\n', choices=logging_levels)
 
-  cmdline.add_argument('-ra', '--api-refresh', metavar="MS", type=float, default=1000., help="api refresh rate (ms)\n")
+  cmdline.add_argument('-ar', '--api-refresh', metavar="MS", type=float, default=1000., help="api refresh rate (ms)\n")
+  cmdline.add_argument('-ai', '--api-interval', metavar="MS", type=float, default=100., help="api interval rate (ms)\n")
 
   cmdline_gui_group = cmdline.add_argument_group('GUI arguments')
   cmdline_gui_group.add_argument('--title', type=str, default="RADAR-CNS api monitor", help="window title\n")
   cmdline_gui_group.add_argument('--invert-fbg-colors', help="invert fore/background colors\n", action="store_true")
-  cmdline_gui_group.add_argument('-rg', '--gui-refresh', metavar="MS", type=float, default=1000., help="gui refresh rate (ms)\n")
-  cmdline_gui_group.add_argument('--maximized', help="start window maximized\n", action="store_true")
+  cmdline_gui_group.add_argument('-gr', '--gui-refresh', metavar="MS", type=float, default=1000., help="gui refresh rate (ms)\n")
+  cmdline_gui_group.add_argument('-m', '--maximized', help="start window maximized\n", action="store_true")
 
   cmdline_devices_group = cmdline.add_argument_group('device manipulation arguments')
   cmdline_devices_group.add_argument('-d', '--devices', type=str, help="csv file for importing device descriptions.\n")
-  cmdline_devices_group.add_argument('--dev-replace', type=str, help="replace device source string (MAC) with the string from this column in the loaded csv.\nMust be unique!\nRequires --devices.\n")
+  cmdline_devices_group.add_argument('-dr', '--dev-replace', type=str, help="replace device source string (MAC) with the string from this column in the loaded csv.\nMust be unique!\nRequires --devices.\n")
 
   cmdline_defaults_group = cmdline.add_argument_group('default selections')
   cmdline_defaults_group.add_argument('-t', '--start-tab', type=int, default=1, help="start with this tab selected\n")
   cmdline_defaults_group.add_argument('--studyid', type=str, default="0", help="start with this studyId selected\n")
   cmdline_defaults_group.add_argument('-u', '--userid', type=str, default="UKLFR", help="start with this userId selected\n")
   cmdline_defaults_group.add_argument('-s', '--sourceid', type=str, help="start with this sourceId selected\n")
-  cmdline_defaults_group.add_argument('--sensor', type=str, default="ACCELEROMETER", help="start with this sensor selected\n", choices=sensors)
+  cmdline_defaults_group.add_argument('--sensor', type=str, default="ACCELEROMETER", help="start with this sensor selected\n", choices=sensorTypes)
   cmdline_defaults_group.add_argument('--stat', type=str, default="AVERAGE", help="start with this stat selected\n", choices=stats)
   cmdline_defaults_group.add_argument('--interval', type=str, default="TEN_SECOND", help="start with this interval selected\n", choices=intervals)
   cmdline_defaults_group.add_argument('--method', type=str, default="all_subjects", help="start with this method selected\n", choices=methods)
@@ -474,8 +440,8 @@ if __name__=="__main__":
   devices = dict()
 
   # create an instance of the API class
-  api_instance = swagger_client.DefaultApi()
-  api_config = swagger_client.Configuration()
+  api_instance = api_client.DefaultApi()
+  logging.info("RADAR-CNS API client @ {}".format(api_instance.config.host))
 
   monitor_data_rlock = threading.RLock()
 
@@ -586,7 +552,7 @@ if __name__=="__main__":
   grid_idx+=1
   # add sensor selection field
   sensor_select = pg.ComboBox()
-  sensor_select.addItems(sensors)
+  sensor_select.addItems(sensorTypes)
   if args.sensor: sensor_select.setValue(args.sensor)
   sensor_select.setEnabled(True)
   raw_api_layout.addWidget(QtGui.QLabel("Sensor"),grid_idx,0)
@@ -634,6 +600,12 @@ if __name__=="__main__":
   raw_api_layout.addWidget(method_select,grid_idx,1)
 
   grid_idx+=1
+  # add data update checkbox
+  data_update_check = QtGui.QCheckBox("Update data")
+  data_update_check.setChecked(True)
+  raw_api_layout.addWidget(data_update_check,grid_idx,0)
+
+  grid_idx+=1
   # add data tree for response vis
   data_tree = pg.DataTreeWidget()
   raw_api_layout.addWidget(data_tree,grid_idx,0,1,2)
@@ -650,7 +622,7 @@ if __name__=="__main__":
 
   # add sensor selection field
   monitor_sensor_select = pg.ComboBox()
-  monitor_sensor_select.addItems(sensors)
+  monitor_sensor_select.addItems(sensorTypes)
   if args.sensor: monitor_sensor_select.setValue(args.sensor)
   monitor_layout.addWidget(monitor_sensor_select,0,1)
 
@@ -669,8 +641,8 @@ if __name__=="__main__":
   monitor_layout.addWidget(monitor_interval_select,0,3)
 
   # add table for monitor overview
-  monitor_table = QtGui.QTableWidget(0,8)
-  monitor_table.setHorizontalHeaderLabels(["subjectId","sourceId","status","sensor","stamp","diff","battery","value"])
+  monitor_table = QtGui.QTableWidget(0,7)
+  monitor_table.setHorizontalHeaderLabels(["subjectId","sourceId","status","battery","stamp","diff","value"])
   monitor_table.horizontalHeader().setSectionResizeMode(QtGui.QHeaderView.ResizeToContents)
   monitor_layout.addWidget(monitor_table,1,0,1,4)
 
@@ -722,7 +694,7 @@ if __name__=="__main__":
   tab_widget.addTab(monitor_widget, "Monitor")
   tab_widget.addTab(devices_widget, "Devices")
   tab_widget.setCurrentIndex(args.start_tab)
-  timedate_label = QtGui.QLabel(api_config.host + " | " + datetime.datetime.utcnow().strftime(timedateformat))
+  timedate_label = QtGui.QLabel(api_instance.config.host + " | " + datetime.datetime.utcnow().strftime(timedateformat))
   tab_widget.setCornerWidget(timedate_label)
 
   # connect update and start timer
