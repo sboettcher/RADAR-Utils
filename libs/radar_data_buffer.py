@@ -11,10 +11,10 @@ sensorTypes = ["ACCELEROMETER", "BATTERY", "BLOOD_VOLUME_PULSE", "ELECTRODERMAL_
 
 status_desc = {
                 "GOOD": {"priority": 1, "th_min": 0, "th_bat": 0.25, "color": "lightgreen"},
-                "OK": {"priority": 2, "th_min": 2, "th_bat": 0.10, "color": "moccasin"},
-                "WARNING": {"priority": 3, "th_min": 3, "th_bat": 0.05, "color": "orange"},
-                "CRITICAL": {"priority": 4, "th_min": 5, "th_bat": 0, "color": "red"},
-                "DISCONNECTED": {"priority": 0, "th_min": 10, "th_bat": -1, "color": "transparent"},
+                #"OK": {"priority": 2, "th_min": 2, "th_bat": 0.10, "color": "moccasin"},
+                "WARNING": {"priority": 3, "th_min": 5, "th_bat": 0.05, "color": "orange"},
+                "CRITICAL": {"priority": 4, "th_min": 10, "th_bat": 0, "color": "red"},
+                "DISCONNECTED": {"priority": 0, "th_min": 15, "th_bat": -1, "color": "transparent"},
                 "N/A": {"priority": -1, "th_min": -1, "th_bat": -1, "color": "lightgrey"}
               }
 

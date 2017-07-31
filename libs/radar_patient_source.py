@@ -66,7 +66,7 @@ class RadarPatientSource(object):
   #
 
   def getPrioStatus(self):
-    statuses = [ self.getStatus(s) for s in self.data_buf.sensors ]
+    statuses = [ self.getStatus(s) for s in ["ACCELEROMETER","BATTERY","BLOOD_VOLUME_PULSE"] ]
     statuses = sorted(statuses, key=lambda x: self.data_buf.getStatusDesc()[x]['priority'])
     if "DISCONNECTED" in statuses: return "DISCONNECTED"
     return statuses[-1]

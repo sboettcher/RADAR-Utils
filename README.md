@@ -17,7 +17,7 @@ pip3 install numpy pyqtgraph pyqt5 urllib3 certifi six
 
 ### Installation:
 - clone the repository to your local drive and `cd` into it
-- in `swagger_client/configuration.py` change the line
+- in `libs/swagger_client/configuration.py` change the line
 ``` python
 self.host = "https://[host]/api"
 ```

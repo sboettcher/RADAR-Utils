@@ -50,10 +50,10 @@ methods = [
 
 status_desc = {
                 "GOOD": {"priority": 1, "th_min": 0, "th_bat": 0.25, "color": "lightgreen"},
-                "OK": {"priority": 2, "th_min": 2, "th_bat": 0.10, "color": "moccasin"},
-                "WARNING": {"priority": 3, "th_min": 3, "th_bat": 0.05, "color": "orange"},
-                "CRITICAL": {"priority": 4, "th_min": 5, "th_bat": 0, "color": "red"},
-                "DISCONNECTED": {"priority": 0, "th_min": 10, "th_bat": -1, "color": "transparent"},
+                #"OK": {"priority": 2, "th_min": 2, "th_bat": 0.10, "color": "moccasin"},
+                "WARNING": {"priority": 3, "th_min": 5, "th_bat": 0.05, "color": "orange"},
+                "CRITICAL": {"priority": 4, "th_min": 10, "th_bat": 0, "color": "red"},
+                "DISCONNECTED": {"priority": 0, "th_min": 15, "th_bat": -1, "color": "transparent"},
                 "N/A": {"priority": -1, "th_min": -1, "th_bat": -1, "color": "lightgrey"}
               }
 
@@ -324,6 +324,7 @@ def update_gui():
           value = str(sample["value"])
         else:
           value = "x: {:.2} | y: {:.2} | z: {:.2}".format(sample["x"],sample["y"],sample["z"])
+      else: value = "N/A"
 
       # get battery status
       battery = d.getBattery()
@@ -682,7 +683,7 @@ if __name__=="__main__":
     devices_table.horizontalHeader().setSectionResizeMode(QtGui.QHeaderView.ResizeToContents)
     devices_layout.addWidget(devices_table,0,0)
     for dev in [ d for d in devices.keys() if "header" not in d ]:
-      table_add_data(devices_table, devices[dev])
+      table_add_data(devices_table, list(devices[dev].values()))
     devices_table.setSortingEnabled(True)
     devices_table.sortByColumn(0, QtCore.Qt.AscendingOrder)
 
