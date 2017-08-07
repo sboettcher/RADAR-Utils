@@ -100,8 +100,8 @@ class RadarSensorMeta(object):
 
     self.num_samples = 0
     self.last_sample = None
-    self.last_stamp = "N/A"
-    self.diff = "N/A"
+    self.last_stamp = None
+    self.diff = None
     self.status = "N/A"
 
   def update(self, num_samples, last_sample):

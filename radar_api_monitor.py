@@ -59,9 +59,10 @@ status_desc = {
 
 max_data_buf = 60480 # 1 week
 
-timedateformat = "%Y-%m-%d %H:%M:%S UTC "
-datastampformat = "%Y-%m-%dT%H:%M:%SZ"
 utcOffset = time.timezone - (time.daylight * 3600)
+utcTZ = int(utcOffset/3600)
+timedateformat = "%Y-%m-%d %H:%M:%S ({}{:02d}) ".format("-" if utcTZ >= 0 else "+",abs(utcTZ))
+datastampformat = "%Y-%m-%dT%H:%M:%SZ"
 
 
 def eprint(*args, **kwargs):
@@ -307,7 +308,7 @@ def update_gui():
   global running, raw_api_data, monitor_data, subjects, subject_sources
 
   # update timedate label
-  timedate_label.setText(api_instance.config.host + " | " + datetime.datetime.utcnow().strftime(timedateformat))
+  timedate_label.setText(api_instance.config.host + " | " + datetime.datetime.now().strftime(timedateformat))
 
   # raw api tab
   if (tab_widget.currentIndex() == 0 and data_update_check.isChecked()):
@@ -357,9 +358,14 @@ def update_gui():
       battery = d.getBattery()
       if not isinstance(battery, str): battery = "{:.2%}".format(battery)
 
+      # get stamp
+      stamp = d.getLastStamp(sensor)
+      if stamp is not None: stamp -= datetime.timedelta(seconds=utcOffset)
+      else: stamp = "N/A"
+
       # add data
       # ["subjectId","sourceId","status","stamp","diff","battery","value"]
-      row = [d.subjectID, d.sourceID, d.getPrioStatus(), battery, d.getLastStamp(sensor), str(d.getDiff(sensor)).split(".")[0], value]
+      row = [d.subjectID, d.sourceID, d.getPrioStatus(), battery, stamp, str(d.getDiff(sensor)).split(".")[0], value]
       table_add_data(monitor_table, row, colcheck=[0,1])
 
     # reset color of table cells
@@ -728,7 +734,7 @@ if __name__=="__main__":
   tab_widget.addTab(monitor_widget, "Monitor")
   tab_widget.addTab(devices_widget, "Devices")
   tab_widget.setCurrentIndex(args.start_tab)
-  timedate_label = QtGui.QLabel(api_instance.config.host + " | " + datetime.datetime.utcnow().strftime(timedateformat))
+  timedate_label = QtGui.QLabel(api_instance.config.host + " | " + datetime.datetime.now().strftime(timedateformat))
   tab_widget.setCornerWidget(timedate_label)
 
   # connect update and start timer
