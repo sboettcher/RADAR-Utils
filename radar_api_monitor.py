@@ -144,6 +144,7 @@ def raw_api_thread(api_instance):
 
     # always get list of subjects and sources first, everything else depends on this
     get_subjects_sources_info()
+    if not running: continue
 
     try:
       cb = raw_api_callback
@@ -194,6 +195,7 @@ def monitor_api_thread(api_instance):
 
     # always get list of subjects and sources first, everything else depends on this
     get_subjects_sources_info()
+    if not running: continue
 
     try:
       cb = monitor_callback
@@ -236,6 +238,12 @@ def monitor_get_all_handle():
     return
   sub = monitor_table.item(sel[0].row(), 0).text()
   src = monitor_table.item(sel[0].row(), 1).text()
+
+  if args.dev_replace:
+    for dev in devices.keys():
+      if dev != "header" and devices[dev][args.dev_replace] == src:
+        src = dev
+        break
 
   t = threading.Thread( target=monitor_get_all_thread, args=(sens, stat, inter, sub, src), name="monitor_get_all" )
   t.start()
