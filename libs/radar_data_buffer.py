@@ -10,7 +10,7 @@ sourceTypes = ["ANDROID", "EMPATICA", "PEBBLE", "BIOVOTION"]
 sensorTypes = ["ACCELEROMETER", "BATTERY", "BLOOD_VOLUME_PULSE", "ELECTRODERMAL_ACTIVITY", "INTER_BEAT_INTERVAL", "HEART_RATE", "THERMOMETER"]
 
 status_desc = {
-                "GOOD": {"priority": 1, "th_min": 0, "th_bat": 0.25, "color": "lightgreen"},
+                "GOOD": {"priority": 1, "th_min": 0, "th_bat": 0.10, "color": "lightgreen"},
                 #"OK": {"priority": 2, "th_min": 2, "th_bat": 0.10, "color": "moccasin"},
                 "WARNING": {"priority": 3, "th_min": 5, "th_bat": 0.05, "color": "orange"},
                 "CRITICAL": {"priority": 4, "th_min": 10, "th_bat": 0, "color": "red"},

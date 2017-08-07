@@ -49,7 +49,7 @@ methods = [
           ]
 
 status_desc = {
-                "GOOD": {"priority": 1, "th_min": 0, "th_bat": 0.25, "color": "lightgreen"},
+                "GOOD": {"priority": 1, "th_min": 0, "th_bat": 0.10, "color": "lightgreen"},
                 #"OK": {"priority": 2, "th_min": 2, "th_bat": 0.10, "color": "moccasin"},
                 "WARNING": {"priority": 3, "th_min": 5, "th_bat": 0.05, "color": "orange"},
                 "CRITICAL": {"priority": 4, "th_min": 10, "th_bat": 0, "color": "red"},
@@ -79,7 +79,7 @@ def raw_api_callback(response):
   if args.verbose and args.verbose > 1: pprint(response)
   raw_api_data = response
 
-def monitor_callback(response):
+def monitor_callback(response, replace=False):
   global running, raw_api_data, monitor_data, subjects, subject_sources
   if args.verbose and args.verbose > 1: pprint(response)
 
@@ -103,7 +103,10 @@ def monitor_callback(response):
   # find current data index
   data_idx = monitor_data.index((patient_id,source_id))
 
-  monitor_data[data_idx].data_buf.replaceSamples(sensor, samples)
+  if replace:
+    monitor_data[data_idx].data_buf.replaceSamples(sensor, samples)
+  else:
+    monitor_data[data_idx].data_buf.addSamples(sensor, samples)
 
   status = monitor_data[data_idx].getStatus(sensor)
   logging.debug("[MONITOR] status of {} @ {}/{}: {}".format(sensor, patient_id, source_id, status))
@@ -143,6 +146,8 @@ def raw_api_thread(api_instance):
 
     try:
       cb = raw_api_callback
+
+      logging.info("query of raw api method {}".format(method_select.value()))
 
       if method_select.value() == "all_subjects":
         if args.studyid:
@@ -200,8 +205,8 @@ def monitor_api_thread(api_instance):
       for sub in subject_sources.keys():
         for src in subject_sources[sub]:
           logging.info("query of sensorTypes @ {}/{}".format(sub, src))
-          for s in sensorTypes:
-            thread = api_instance.get_samples_json(s, monitor_stat_select.value(), monitor_interval_select.value(), sub, src, callback=cb)
+          for s in ["ACCELEROMETER","BATTERY"]:#sensorTypes:
+            thread = api_instance.get_last_received_sample_json(s, monitor_stat_select.value(), monitor_interval_select.value(), sub, src, callback=cb)
             time.sleep(args.api_interval/1000.)
       #if args.api_refresh/1000. < 10: time.sleep(10 - (args.api_refresh/1000.)) #wait at least ten seconds for refresh
 
@@ -211,6 +216,28 @@ def monitor_api_thread(api_instance):
     thread_sleep(args.api_refresh)
 
 
+def monitor_get_all_thread(sens, stat, inter, sub, src):
+  logging.info("Getting all available {} data for {}/{}".format(sens, sub, src))
+  monitor_get_data_button.setEnabled(False)
+  response = api_instance.get_samples_json(sens, stat, inter, sub, src)
+  monitor_callback(response, replace=True)
+  monitor_get_data_button.setEnabled(True)
+  logging.info("Got {} data for {}/{}".format(sens, sub, src))
+
+def monitor_get_all_handle():
+  sens = monitor_sensor_select.value()
+  stat = monitor_stat_select.value()
+  inter = monitor_interval_select.value()
+
+  sel = monitor_table.selectedItems()
+  if len(sel) < 1:
+    logging.debug("No source selected for get_samples_json!")
+    return
+  sub = monitor_table.item(sel[0].row(), 0).text()
+  src = monitor_table.item(sel[0].row(), 1).text()
+
+  t = threading.Thread( target=monitor_get_all_thread, args=(sens, stat, inter, sub, src), name="monitor_get_all" )
+  t.start()
 
 
 def get_subjects_sources_info():
@@ -651,6 +678,12 @@ if __name__=="__main__":
   monitor_update_check = QtGui.QCheckBox("Update graph")
   monitor_update_check.setChecked(True)
   monitor_layout.addWidget(monitor_update_check,2,0)
+
+  monitor_get_data_button = QtGui.QPushButton("Get All Data")
+  monitor_get_data_button.setAutoDefault(False)
+  monitor_get_data_button.setAutoRepeat(False)
+  monitor_get_data_button.clicked.connect(monitor_get_all_handle)
+  monitor_layout.addWidget(monitor_get_data_button,2,2)
 
   # add zoom selection field
   monitor_zoom_select = pg.ComboBox()
