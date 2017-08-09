@@ -61,7 +61,7 @@ max_data_buf = 60480 # 1 week
 
 utcOffset = time.timezone - (time.daylight * 3600)
 utcTZ = int(utcOffset/3600)
-timedateformat = "%Y-%m-%d %H:%M:%S ({}{:02d}) ".format("-" if utcTZ >= 0 else "+",abs(utcTZ))
+timedateformat = "%Y-%m-%d %H:%M:%S (UTC{}{:02d}) ".format("-" if utcTZ >= 0 else "+",abs(utcTZ))
 datastampformat = "%Y-%m-%dT%H:%M:%SZ"
 
 
@@ -73,6 +73,17 @@ def thread_sleep(msec):
   for i in range(math.ceil(msec/1000.)):
     if running: time.sleep(1)
 
+
+#
+# API CALLBACKS
+#
+#    #    ######  ###     #####     #    #       #       ######     #     #####  #    #  #####
+#   # #   #     #  #     #     #   # #   #       #       #     #   # #   #     # #   #  #     #
+#  #   #  #     #  #     #        #   #  #       #       #     #  #   #  #       #  #   #
+# #     # ######   #     #       #     # #       #       ######  #     # #       ###     #####
+# ####### #        #     #       ####### #       #       #     # ####### #       #  #         #
+# #     # #        #     #     # #     # #       #       #     # #     # #     # #   #  #     #
+# #     # #       ###     #####  #     # ####### ####### ######  #     #  #####  #    #  #####
 
 def raw_api_callback(response):
   global running, raw_api_data, monitor_data, subjects, subject_sources
@@ -115,24 +126,163 @@ def monitor_callback(response, replace=False):
   monitor_data_rlock.release()
 
 
-# update a dictionary of deque buffers; add empty buffer if key not present, otherwise append
-# check for time stamp before appending to prevent duplicates
-def update_data_buf(buffer_dict, key, data, maxlen=None):
-  if key not in buffer_dict:
-    buffer_dict[key] = collections.deque(maxlen=maxlen)
-  for i in buffer_dict[key]:
-    if i["startDateTime"] == data["startDateTime"]: return
-  buffer_dict[key].append(data)
+## update a dictionary of deque buffers; add empty buffer if key not present, otherwise append
+## check for time stamp before appending to prevent duplicates
+#def update_data_buf(buffer_dict, key, data, maxlen=None):
+#  if key not in buffer_dict:
+#    buffer_dict[key] = collections.deque(maxlen=maxlen)
+#  for i in buffer_dict[key]:
+#    if i["startDateTime"] == data["startDateTime"]: return
+#  buffer_dict[key].append(data)
+#
+## replace a dictionary of deque buffers; add empty buffer if key not present, otherwise clear and extend
+#def replace_data_buf(buffer_dict, key, data, maxlen=None):
+#  if key not in buffer_dict:
+#    buffer_dict[key] = collections.deque(maxlen=maxlen)
+#  else: buffer_dict[key].clear()
+#  buffer_dict[key].extend(data)
 
-# replace a dictionary of deque buffers; add empty buffer if key not present, otherwise clear and extend
-def replace_data_buf(buffer_dict, key, data, maxlen=None):
-  if key not in buffer_dict:
-    buffer_dict[key] = collections.deque(maxlen=maxlen)
-  else: buffer_dict[key].clear()
-  buffer_dict[key].extend(data)
+
+#
+# BUTTON CALLBACKS
+#
+# ######  #     # ####### ####### ####### #     #     #####     #    #       #       ######     #     #####  #    #  #####
+# #     # #     #    #       #    #     # ##    #    #     #   # #   #       #       #     #   # #   #     # #   #  #     #
+# #     # #     #    #       #    #     # # #   #    #        #   #  #       #       #     #  #   #  #       #  #   #
+# ######  #     #    #       #    #     # #  #  #    #       #     # #       #       ######  #     # #       ###     #####
+# #     # #     #    #       #    #     # #   # #    #       ####### #       #       #     # ####### #       #  #         #
+# #     # #     #    #       #    #     # #    ##    #     # #     # #       #       #     # #     # #     # #   #  #     #
+# ######   #####     #       #    ####### #     #     #####  #     # ####### ####### ######  #     #  #####  #    #  #####
+
+def monitor_get_sources_thread():
+  logging.info("Getting all available subjects and sources from the server.")
+  monitor_get_sources_button.setEnabled(False)
+  get_subjects_sources_info(force=True)
+  monitor_get_sources_button.setEnabled(True)
+  logging.info("Got subject and source data.")
+
+def monitor_get_sources_handle():
+  t = threading.Thread( target=monitor_get_sources_thread, name="monitor_get_sources" )
+  t.start()
+
+def monitor_get_all_thread(sens, stat, inter, sub, src):
+  logging.info("Getting all available {} data for {}/{}".format(sens, sub, src))
+  monitor_get_data_button.setEnabled(False)
+  response = api_instance.get_samples_json(sens, stat, inter, sub, src)
+  monitor_callback(response, replace=True)
+  monitor_get_data_button.setEnabled(True)
+  logging.info("Got {} data for {}/{}".format(sens, sub, src))
+
+def monitor_get_all_handle():
+  sens = monitor_sensor_select.value()
+  stat = monitor_stat_select.value()
+  inter = monitor_interval_select.value()
+
+  sel = monitor_table.selectedItems()
+  if len(sel) < 1:
+    logging.debug("No source selected for get_samples_json!")
+    return
+  sub = monitor_table.item(sel[0].row(), 0).text()
+  src = monitor_table.item(sel[0].row(), 1).text()
+
+  if args.dev_replace:
+    for dev in devices.keys():
+      if dev != "header" and devices[dev][args.dev_replace] == src:
+        src = dev
+        break
+
+  t = threading.Thread( target=monitor_get_all_thread, args=(sens, stat, inter, sub, src), name="monitor_get_all" )
+  t.start()
+
+
+#
+# META HELPERS
+#
+# #     # ####### #######    #       #     # ####### #       ######  ####### ######   #####
+# ##   ## #          #      # #      #     # #       #       #     # #       #     # #     #
+# # # # # #          #     #   #     #     # #       #       #     # #       #     # #
+# #  #  # #####      #    #     #    ####### #####   #       ######  #####   ######   #####
+# #     # #          #    #######    #     # #       #       #       #       #   #         #
+# #     # #          #    #     #    #     # #       #       #       #       #    #  #     #
+# #     # #######    #    #     #    #     # ####### ####### #       ####### #     #  #####
+
+def get_subjects_sources_info(force=False):
+  global running, raw_api_data, monitor_data, subjects, subject_sources
+  if not force and len(monitor_data) > 0: return # only get info once. This will be changed when the MP is ready.
+  try:
+    subjects_tmp = api_instance.get_all_subjects_json(args.studyid)
+    for subject in subjects_tmp["subjects"]:
+      if subject["subjectId"] not in subjects: subjects.append(subject["subjectId"])
+      subject_sources[subject["subjectId"]] = [ source["id"] for source in subject["sources"] if source["type"] == "EMPATICA" ]
+  except ApiException as e:
+    logging.error("Exception when calling DefaultApi->get_all_sources_json[]: %s\n" % e)
+
+  # update monitor data
+  monitor_data_rlock.acquire()
+  for sub in sorted(subject_sources.keys()):
+    for src in subject_sources[sub]:
+      src = src if src not in devices or not args.dev_replace or devices[src][args.dev_replace] == "" else devices[src][args.dev_replace]
+      # check if entry already exists, skip if yes
+      if len(monitor_data) > 0 and (sub,src) in monitor_data: continue
+      monitor_data.append(RadarPatientSource(sub, src, bufferlen=max_data_buf))
+  monitor_data_rlock.release()
+
+
+#
+# FORMAT/TABLE/ETC HELPERS
+#
+
+# recursively sorts a qt tree item and its children
+def sort_tree_item(treeitem, recursive=True):
+  if treeitem.childCount() == 0: return
+  treeitem.sortChildren(0,0)
+  if not recursive: return
+  for c in range(treeitem.childCount()):
+    sort_tree_item(treeitem.child(c))
+
+# checks if the given table contains the data row (list),
+# tests if all columns in colcheck are equal
+def table_contains_data(table, data, colcheck=[0]):
+  if not isinstance(data, list): return
+  for r in range(table.rowCount()):
+    comp = [ table.item(r,c).text() for c in colcheck ]
+    if len([ i for i in comp if i in data ]) == len(comp): return r
+  return -1
+
+# adds a new data row (list) to the given table, or replaces the data if it already exists.
+# Possibility to provide a key if an item turns out to be a dict
+def table_add_data(table, data, colcheck=[0], key=None):
+  if not isinstance(data, list): return
+
+  # check if row exists, else add one
+  row = table_contains_data(table, data, colcheck)
+  if row < 0:
+    row = table.rowCount()
+    table.insertRow(row)
+    for i in range(table.columnCount()):
+      table.setItem(row, i, QtGui.QTableWidgetItem())
+
+  # add data
+  for i in range(table.columnCount()):
+    table.item(row,i).setText(str(data[i]))
+
+# clears the table of rows, except those with indices in keep
+def table_clear(table, keep=[]):
+  for r in [ r for r in reversed(range(table.rowCount())) if r not in keep ]:
+    table.removeRow(r)
 
 
 
+#
+# API THREADS
+#
+#    #    ######  ###    ####### #     # ######  #######    #    ######   #####
+#   # #   #     #  #        #    #     # #     # #         # #   #     # #     #
+#  #   #  #     #  #        #    #     # #     # #        #   #  #     # #
+# #     # ######   #        #    ####### ######  #####   #     # #     #  #####
+# ####### #        #        #    #     # #   #   #       ####### #     #       #
+# #     # #        #        #    #     # #    #  #       #     # #     # #     #
+# #     # #       ###       #    #     # #     # ####### #     # ######   #####
 
 def raw_api_thread(api_instance):
   global running, raw_api_data, monitor_data, subjects, subject_sources
@@ -207,8 +357,10 @@ def monitor_api_thread(api_instance):
       logging.info("----------")
       for sub in subject_sources.keys():
         for src in subject_sources[sub]:
+          if not running: continue
           logging.info("query of sensorTypes @ {}/{}".format(sub, src))
           for s in ["ACCELEROMETER","BATTERY"]:#sensorTypes:
+            if not running: continue
             thread = api_instance.get_last_received_sample_json(s, monitor_stat_select.value(), monitor_interval_select.value(), sub, src, callback=cb)
             time.sleep(args.api_interval/1000.)
       #if args.api_refresh/1000. < 10: time.sleep(10 - (args.api_refresh/1000.)) #wait at least ten seconds for refresh
@@ -219,98 +371,17 @@ def monitor_api_thread(api_instance):
     thread_sleep(args.api_refresh)
 
 
-def monitor_get_all_thread(sens, stat, inter, sub, src):
-  logging.info("Getting all available {} data for {}/{}".format(sens, sub, src))
-  monitor_get_data_button.setEnabled(False)
-  response = api_instance.get_samples_json(sens, stat, inter, sub, src)
-  monitor_callback(response, replace=True)
-  monitor_get_data_button.setEnabled(True)
-  logging.info("Got {} data for {}/{}".format(sens, sub, src))
 
-def monitor_get_all_handle():
-  sens = monitor_sensor_select.value()
-  stat = monitor_stat_select.value()
-  inter = monitor_interval_select.value()
-
-  sel = monitor_table.selectedItems()
-  if len(sel) < 1:
-    logging.debug("No source selected for get_samples_json!")
-    return
-  sub = monitor_table.item(sel[0].row(), 0).text()
-  src = monitor_table.item(sel[0].row(), 1).text()
-
-  if args.dev_replace:
-    for dev in devices.keys():
-      if dev != "header" and devices[dev][args.dev_replace] == src:
-        src = dev
-        break
-
-  t = threading.Thread( target=monitor_get_all_thread, args=(sens, stat, inter, sub, src), name="monitor_get_all" )
-  t.start()
-
-
-def get_subjects_sources_info():
-  global running, raw_api_data, monitor_data, subjects, subject_sources
-  try:
-    subjects_tmp = api_instance.get_all_subjects_json(args.studyid)
-    for subject in subjects_tmp["subjects"]:
-      if subject["subjectId"] not in subjects: subjects.append(subject["subjectId"])
-      subject_sources[subject["subjectId"]] = [ source["id"] for source in subject["sources"] if source["type"] == "EMPATICA" ]
-  except ApiException as e:
-    logging.error("Exception when calling DefaultApi->get_all_sources_json[]: %s\n" % e)
-
-  # update monitor data
-  monitor_data_rlock.acquire()
-  for sub in sorted(subject_sources.keys()):
-    for src in subject_sources[sub]:
-      src = src if src not in devices or not args.dev_replace or devices[src][args.dev_replace] == "" else devices[src][args.dev_replace]
-      # check if entry already exists, skip if yes
-      if len(monitor_data) > 0 and (sub,src) in monitor_data: continue
-      monitor_data.append(RadarPatientSource(sub, src, bufferlen=max_data_buf))
-  monitor_data_rlock.release()
-
-
-
-# recursively sorts a qt tree item and its children
-def sort_tree_item(treeitem, recursive=True):
-  if treeitem.childCount() == 0: return
-  treeitem.sortChildren(0,0)
-  if not recursive: return
-  for c in range(treeitem.childCount()):
-    sort_tree_item(treeitem.child(c))
-
-
-# checks if the given table contains the data row (list),
-# tests if all columns in colcheck are equal
-def table_contains_data(table, data, colcheck=[0]):
-  if not isinstance(data, list): return
-  for r in range(table.rowCount()):
-    comp = [ table.item(r,c).text() for c in colcheck ]
-    if len([ i for i in comp if i in data ]) == len(comp): return r
-  return -1
-
-# adds a new data row (list) to the given table, or replaces the data if it already exists.
-# Possibility to provide a key if an item turns out to be a dict
-def table_add_data(table, data, colcheck=[0], key=None):
-  if not isinstance(data, list): return
-
-  # check if row exists, else add one
-  row = table_contains_data(table, data, colcheck)
-  if row < 0:
-    row = table.rowCount()
-    table.insertRow(row)
-    for i in range(table.columnCount()):
-      table.setItem(row, i, QtGui.QTableWidgetItem())
-
-  # add data
-  for i in range(table.columnCount()):
-    table.item(row,i).setText(str(data[i]))
-
-# clears the table of rows, except those with indices in keep
-def table_clear(table, keep=[]):
-  for r in [ r for r in reversed(range(table.rowCount())) if r not in keep ]:
-    table.removeRow(r)
-
+#
+# GUI THREAD
+#
+#  #####  #     # ###    ####### #     # ######  #######    #    ######
+# #     # #     #  #        #    #     # #     # #         # #   #     #
+# #       #     #  #        #    #     # #     # #        #   #  #     #
+# #  #### #     #  #        #    ####### ######  #####   #     # #     #
+# #     # #     #  #        #    #     # #   #   #       ####### #     #
+# #     # #     #  #        #    #     # #    #  #       #     # #     #
+#  #####   #####  ###       #    #     # #     # ####### #     # ######
 
 def update_gui():
   global running, raw_api_data, monitor_data, subjects, subject_sources
@@ -414,7 +485,16 @@ def update_gui():
 
 
 
-
+#
+# MAIN
+#
+# #     #    #    ### #     #
+# ##   ##   # #    #  ##    #
+# # # # #  #   #   #  # #   #
+# #  #  # #     #  #  #  #  #
+# #     # #######  #  #   # #
+# #     # #     #  #  #    ##
+# #     # #     # ### #     #
 
 if __name__=="__main__":
   global running, raw_api_data, monitor_data, subjects, subject_sources
@@ -427,8 +507,8 @@ if __name__=="__main__":
   #cmdline.add_argument('-q', '--quiet', help='be quiet\n', action='store_true')
   cmdline.add_argument('-l', '--logging', metavar="LVL", type=str, default="INFO", help='set logging level\n', choices=logging_levels)
 
-  cmdline.add_argument('-ar', '--api-refresh', metavar="MS", type=float, default=1000., help="api refresh rate (ms)\n")
-  cmdline.add_argument('-ai', '--api-interval', metavar="MS", type=float, default=100., help="api interval rate (ms)\n")
+  cmdline.add_argument('-ar', '--api-refresh', metavar="MS", type=float, default=10000., help="api refresh rate (ms)\n")
+  cmdline.add_argument('-ai', '--api-interval', metavar="MS", type=float, default=1000., help="api interval rate (ms)\n")
 
   cmdline_gui_group = cmdline.add_argument_group('GUI arguments')
   cmdline_gui_group.add_argument('--title', type=str, default="RADAR-CNS api monitor", help="window title\n")
@@ -662,49 +742,57 @@ if __name__=="__main__":
   #monitor_view_all_check.setChecked(True)
   monitor_layout.addWidget(monitor_view_all_check,0,0)
 
+  # add get source data push button
+  monitor_get_sources_button = QtGui.QPushButton("Get Sources")
+  monitor_get_sources_button.setAutoDefault(False)
+  monitor_get_sources_button.setAutoRepeat(False)
+  monitor_get_sources_button.clicked.connect(monitor_get_sources_handle)
+  monitor_layout.addWidget(monitor_get_sources_button,0,1)
+
   # add sensor selection field
   monitor_sensor_select = pg.ComboBox()
   monitor_sensor_select.addItems(sensorTypes)
   if args.sensor: monitor_sensor_select.setValue(args.sensor)
-  monitor_layout.addWidget(monitor_sensor_select,0,1)
+  monitor_layout.addWidget(monitor_sensor_select,0,2)
 
   # add stat selection field
   monitor_stat_select = pg.ComboBox()
   monitor_stat_select.addItems(stats)
   if args.stat: monitor_stat_select.setValue(args.stat)
   #monitor_stat_select.setEnabled(False)
-  monitor_layout.addWidget(monitor_stat_select,0,2)
+  monitor_layout.addWidget(monitor_stat_select,0,3)
 
   # add interval selection field
   monitor_interval_select = pg.ComboBox()
   monitor_interval_select.addItems(intervals)
   if args.interval: monitor_interval_select.setValue(args.interval)
   monitor_interval_select.setEnabled(False)
-  monitor_layout.addWidget(monitor_interval_select,0,3)
+  monitor_layout.addWidget(monitor_interval_select,0,4)
 
   # add table for monitor overview
   monitor_table = QtGui.QTableWidget(0,7)
   monitor_table.setHorizontalHeaderLabels(["subjectId","sourceId","status","battery","stamp","diff","value"])
   monitor_table.horizontalHeader().setSectionResizeMode(QtGui.QHeaderView.ResizeToContents)
-  monitor_layout.addWidget(monitor_table,1,0,1,4)
+  monitor_layout.addWidget(monitor_table,1,0,1,5)
 
   # add graph update checkbox
   monitor_update_check = QtGui.QCheckBox("Update graph")
   monitor_update_check.setChecked(True)
   monitor_layout.addWidget(monitor_update_check,2,0)
 
+  # add get all data push button
   monitor_get_data_button = QtGui.QPushButton("Get All Data")
   monitor_get_data_button.setAutoDefault(False)
   monitor_get_data_button.setAutoRepeat(False)
   monitor_get_data_button.clicked.connect(monitor_get_all_handle)
-  monitor_layout.addWidget(monitor_get_data_button,2,2)
+  monitor_layout.addWidget(monitor_get_data_button,2,3)
 
   # add zoom selection field
   monitor_zoom_select = pg.ComboBox()
   monitor_zoom_select.addItems(zoom_intervals)
   if args.zoom: monitor_zoom_select.setValue(args.zoom)
   else: monitor_zoom_select.setValue(zoom_intervals[-1])
-  monitor_layout.addWidget(monitor_zoom_select,2,3)
+  monitor_layout.addWidget(monitor_zoom_select,2,4)
 
   # add plot for monitor overview
   date_axis = DateAxisItem(orientation='bottom')
@@ -712,7 +800,7 @@ if __name__=="__main__":
   monitor_plotw.setRange(xRange=[ int(time.time()-intervals_to_sec[monitor_zoom_select.value()]), int(time.time()) ])
   #monitor_plotw.setLimits(xMax=max_data_buf)
   monitor_plotw.setLimits(xMin=0)
-  monitor_layout.addWidget(monitor_plotw,3,0,1,4)
+  monitor_layout.addWidget(monitor_plotw,3,0,1,5)
 
   monitor_plot_x = monitor_plotw.plot(pen=(255,0,0), name="x")
   monitor_plot_y = monitor_plotw.plot(pen=(0,255,0), name="y")
