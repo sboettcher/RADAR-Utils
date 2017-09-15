@@ -10,10 +10,13 @@ from pprint import pprint
 
 import matplotlib
 import matplotlib.pyplot as plt
+import matplotlib.dates as mdates
+from matplotlib.widgets import Button
 
-from datetime import datetime,timezone
+from datetime import datetime,timezone,timedelta
 
 stampkeys = ["time", "timeReceived"]
+
 
 
 def valid_datetime(s):
@@ -133,10 +136,52 @@ def data_get_fields(sample):
     return key, stamps, data
 
 
+
+class XYZoomLevel(object):
+  def __init__(self):
+    self.reset = None
+
+  def setXZoom(self, event, zoom, axes):
+    print("[GRAPH] set X zoom to {} seconds".format(zoom))
+
+    current = axes.get_xlim()
+    if not self.reset: self.reset = current
+
+    left = current[0]
+    left_dt = mdates.num2date(left)
+    right_dt = left_dt + timedelta(seconds=zoom)
+    right = mdates.date2num(right_dt)
+
+    axes.set_xlim(left, right, auto=True)
+
+    minorLocator = mdates.SecondLocator()
+    axes.xaxis.set_minor_locator(minorLocator)
+
+  def setXZoomMM(self, event, min, max, axes):
+    print("[GRAPH] set X zoom to {} <> {}".format(min, max))
+    axes.set_xlim(mdates.date2num(min), mdates.date2num(max), auto=True)
+    axes.xaxis.set_minor_locator(plt.NullLocator())
+
+  def resetXZoom(self, event, axes):
+    if not self.reset: return
+    print("[GRAPH] reset X zoom")
+    axes.set_xlim(self.reset[0], self.reset[1], auto=True)
+    axes.xaxis.set_minor_locator(plt.NullLocator())
+
+  def setYZoomMM(self, event, min, max, axes):
+    print("[GRAPH] set Y zoom to {} <> {}".format(min, max))
+    axes.set_ylim(min, max, auto=True)
+    axes.yaxis.set_minor_locator(plt.NullLocator())
+
+
 def graph(samples):
     fig = plt.figure(1, figsize=(15,8))
     fig.clf()
     fig.canvas.set_window_title('data')
+
+    if args.maximized:
+      mng = plt.get_current_fig_manager()
+      mng.resize(*mng.window.maxsize())
 
     keys,stamps,data,datakeys = list(),list(),list(),list()
 
@@ -244,6 +289,17 @@ def graph(samples):
         ax.set_title("{} {} | {} -> {}".format(k+1, datakeys[k], plot_x[0], plot_x[-1]))
 
       ax.set_xlabel('unix timestamp' if args.unix else 'date/time')
+      ax.grid(True, which='both', axis='x')
+
+      majorLocator = mdates.AutoDateLocator(minticks=10,maxticks=10)#mdates.MinuteLocator()
+      #majorLocator.intervald[mdates.SECONDLY] = [1,10,30]
+      majorFormatter = mdates.AutoDateFormatter(majorLocator)
+      majorFormatter.scaled[1./(mdates.MUSECONDS_PER_DAY)] = '%H:%M:%S'
+
+      ax.xaxis.set_major_locator(majorLocator)
+      ax.xaxis.set_major_formatter(majorFormatter)
+
+
 
       if args.verbose and args.verbose > 1:
         print("[GRAPH] plotting samples from data key {}".format(datakeys[k]))
@@ -261,8 +317,29 @@ def graph(samples):
     else:
       print("[GRAPH] Done")
 
+    zoom_level = XYZoomLevel()
+    ax_zoom_res = plt.axes([0.01, 0.01, 0.04, 0.025])
+    ax_zoom_10s = plt.axes([0.06, 0.01, 0.025, 0.025])
+    ax_zoom_30s = plt.axes([0.09, 0.01, 0.025, 0.025])
+    ax_zoom_60s = plt.axes([0.12, 0.01, 0.025, 0.025])
+    b_zoom_res = Button(ax_zoom_res, 'X reset')
+    b_zoom_10s = Button(ax_zoom_10s, '10s')
+    b_zoom_30s = Button(ax_zoom_30s, '30s')
+    b_zoom_60s = Button(ax_zoom_60s, '60s')
+    b_zoom_res.on_clicked(lambda x: zoom_level.setXZoomMM(x,min=datetimedata[0],max=datetimedata[-1],axes=ax))
+    b_zoom_10s.on_clicked(lambda x: zoom_level.setXZoom(x,zoom=10,axes=ax))
+    b_zoom_30s.on_clicked(lambda x: zoom_level.setXZoom(x,zoom=30,axes=ax))
+    b_zoom_60s.on_clicked(lambda x: zoom_level.setXZoom(x,zoom=60,axes=ax))
+
+    ax_y_range = plt.axes([0.01, 0.04, 0.04, 0.025])
+    b_y_range = Button(ax_y_range, 'Y reset')
+    b_y_range.on_clicked(lambda x: zoom_level.setYZoomMM(x,min=y_min_new,max=y_max_new,axes=ax))
+
     plt.subplots_adjust(hspace=0.3)
     plt.show()
+
+
+
 
 
 def parse_fs_tree(path, tree):
@@ -311,6 +388,7 @@ if __name__=="__main__":
     cmdline.add_argument('-1', '--single', help='plot into single graph, e.g. for acceleration\n', action='store_true')
     #cmdline.add_argument('-a', '--all', help='merge multiple data sources into one data line\n', action='store_true')
     cmdline.add_argument('-i', '--interactive', type=str, help='interactive mode, reads file structure of provided path and displays options\n')
+    cmdline.add_argument('-m', '--maximized', help="start plot maximized\n", action="store_true")
 
     # timestamp options
     cmdline.add_argument('-s', '--timestamp', metavar='STR', type=str, default="time", choices=stampkeys, help="timestamp to be used.\none of: " + str(stampkeys) + "\n")
