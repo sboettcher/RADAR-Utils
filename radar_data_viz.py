@@ -136,7 +136,6 @@ def data_get_fields(sample):
     return key, stamps, data
 
 
-
 class XYZoomLevel(object):
   def __init__(self):
     self.reset = None
@@ -291,8 +290,8 @@ def graph(samples):
       ax.set_xlabel('unix timestamp' if args.unix else 'date/time')
       ax.grid(True, which='both', axis='x')
 
-      majorLocator = mdates.AutoDateLocator(minticks=10,maxticks=10)#mdates.MinuteLocator()
-      #majorLocator.intervald[mdates.SECONDLY] = [1,10,30]
+      majorLocator = mdates.AutoDateLocator(minticks=8)#mdates.MinuteLocator()
+      majorLocator.intervald[mdates.SECONDLY] = [1,5,10,20,30]
       majorFormatter = mdates.AutoDateFormatter(majorLocator)
       majorFormatter.scaled[1./(mdates.MUSECONDS_PER_DAY)] = '%H:%M:%S'
 
