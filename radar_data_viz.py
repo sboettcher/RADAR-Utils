@@ -72,12 +72,12 @@ def load(streams):
       line = line.strip('\n')
 
       # skip empty and comment lines
-      if line == "" or line == "#":
+      if line == "" or line[0] == "#":
         continue
 
       if fext == ".json":
         samples.append(parse_json(line, s, len(streams)))
-      elif fext == ".csv":
+      elif fext == ".csv" or stream == '-':
         if not csv_header: csv_header = line.replace("\"", "").split(",")
         else: samples.append(parse_csv(csv_header, line.split(","), s, len(streams)))
 
