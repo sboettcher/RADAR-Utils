@@ -519,6 +519,7 @@ if __name__=="__main__":
   cmdline_devices_group = cmdline.add_argument_group('device manipulation arguments')
   cmdline_devices_group.add_argument('-d', '--devices', type=str, help="csv file for importing device descriptions.\n")
   cmdline_devices_group.add_argument('-dr', '--dev-replace', type=str, help="replace device source string (MAC) with the string from this column in the loaded csv.\nMust be unique!\nRequires --devices.\n")
+  cmdline_devices_group.add_argument('-das', '--devices-as-sources', help="Uses loaded table of devices as sources, must have column 'patientId'.\n", action='store_true')
 
   cmdline_defaults_group = cmdline.add_argument_group('default selections')
   cmdline_defaults_group.add_argument('-t', '--start-tab', type=int, default=1, help="start with this tab selected\n")
@@ -543,6 +544,10 @@ if __name__=="__main__":
 
   if args.dev_replace and not args.devices:
     logging.error("--dev-replace requires --devices!")
+    sys.exit(1)
+
+  if args.devices_as_sources and not args.devices:
+    logging.error("--devices-as-sources requires --devices!")
     sys.exit(1)
 
   if args.version:
@@ -635,7 +640,20 @@ if __name__=="__main__":
 
 
   # get some api info
-  get_subjects_sources_info()
+  if not args.devices_as_sources:
+    get_subjects_sources_info()
+  else:
+    monitor_data_rlock.acquire()
+    for dev in [ d for d in devices.keys() if "header" not in d and devices[d]["patientId"] != '' ]:
+      sub = devices[dev]["patientId"]
+      if sub not in subjects: subjects.append(sub)
+      if sub not in subject_sources: subject_sources[sub] = [ dev ]
+      elif dev not in subject_sources[sub]: subject_sources[sub].append(dev)
+      src = dev if not args.dev_replace or devices[dev][args.dev_replace] == "" else devices[dev][args.dev_replace]
+      if len(monitor_data) > 0 and (sub,src) in monitor_data: continue
+      monitor_data.append(RadarPatientSource(sub, src, bufferlen=max_data_buf))
+    monitor_data_rlock.release()
+
 
   #
   # RAW API TAB

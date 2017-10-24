@@ -20,6 +20,14 @@ class RadarPatientSource(object):
     self.data_buf = RadarDataBuffer(self.sourceType, maxlen=bufferlen)
 
   #
+  # toString()
+  #
+  def __str__(self):
+    return "{}: {}@{}({})".format(self.__class__.__name__, self.subjectID, self.sourceID, self.sourceType)
+  def __repr__(self):
+    return "{}: {}@{}({})".format(self.__class__.__name__, self.subjectID, self.sourceID, self.sourceType)
+
+  #
   # operator== overload
   #
   def __eq__(self, other):
